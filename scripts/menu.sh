@@ -483,6 +483,86 @@ backup_vm_menu() {
     read -r
 }
 
+# ── Gebruikersbeheer ─────────────────────────
+manage_users_menu() {
+    local vmid
+    vmid=$(input_box "VM ID" "Geef het VM ID:" "") || return
+    [[ -z "$vmid" ]] && return
+
+    if ! qm status "$vmid" &>/dev/null 2>&1; then
+        msg_info "Fout" "VM $vmid niet gevonden."
+        return
+    fi
+
+    local name
+    name=$(qm config "$vmid" 2>/dev/null | grep "^name:" | awk '{print $2}')
+
+    local action
+    action=$(menu_select "Gebruikersbeheer" "VM $vmid ($name) - Wat wil je doen?" 16 \
+        "list"   "Gebruikers tonen" \
+        "passwd" "Wachtwoord (her)instellen" \
+        "add"    "Nieuwe gebruiker aanmaken" \
+        "del"    "Gebruiker verwijderen") || return
+
+    # Zoek manage-vm-user.sh
+    local user_script
+    if [[ -f "$SCRIPT_DIR/manage-vm-user.sh" ]]; then
+        user_script="$SCRIPT_DIR/manage-vm-user.sh"
+    elif [[ -f "/root/scripts/manage-vm-user.sh" ]]; then
+        user_script="/root/scripts/manage-vm-user.sh"
+    else
+        msg_info "Fout" "manage-vm-user.sh niet gevonden"
+        return
+    fi
+
+    local cmd_args=("--vmid" "$vmid")
+
+    case "$action" in
+        list)
+            cmd_args+=("--list-users")
+            ;;
+        passwd)
+            local user
+            user=$(input_box "Gebruiker" "Wachtwoord instellen voor gebruiker:" "admin") || return
+            [[ -z "$user" ]] && return
+            cmd_args+=("--passwd" "$user")
+            ;;
+        add)
+            local user
+            user=$(input_box "Gebruikersnaam" "Naam voor de nieuwe gebruiker:" "") || return
+            [[ -z "$user" ]] && return
+            cmd_args+=("--add-user" "$user")
+
+            if confirm "Sudo" "Sudo rechten toekennen aan '$user'?"; then
+                cmd_args+=("--sudo")
+            fi
+
+            local ssh_key
+            ssh_key=$(input_box "SSH Key" "SSH public key (leeg = overslaan):" "") || true
+            [[ -n "$ssh_key" ]] && cmd_args+=("--ssh-key" "$ssh_key")
+            ;;
+        del)
+            local user
+            user=$(input_box "Gebruiker" "Welke gebruiker verwijderen?" "") || return
+            [[ -z "$user" ]] && return
+            if ! confirm "Bevestiging" "Gebruiker '$user' verwijderen van VM $vmid ($name)?\n\nDit verwijdert ook de home directory!"; then
+                return
+            fi
+            cmd_args+=("--del-user" "$user")
+            ;;
+    esac
+
+    clear
+    show_banner
+    echo -e "${BLUE}Gebruikersbeheer VM $vmid ($name)...${NC}"
+    echo ""
+
+    bash "$user_script" "${cmd_args[@]}"
+    echo ""
+    echo -e "${GREEN}Druk op Enter om terug te gaan naar het menu...${NC}"
+    read -r
+}
+
 # ── VMs Updaten ──────────────────────────────
 update_vms_menu() {
     local update_choice
@@ -527,13 +607,14 @@ update_vms_menu() {
 main_menu() {
     while true; do
         local choice
-        choice=$(menu_select "Hoofdmenu" "Wat wil je doen?" 18 \
-            "aanmaken"    "VM aanmaken" \
-            "overzicht"   "VM overzicht" \
-            "verwijderen" "VM verwijderen" \
-            "backup"      "VM backup" \
-            "updaten"     "VMs bijwerken (apt upgrade)" \
-            "afsluiten"   "Menu sluiten") || break
+        choice=$(menu_select "Hoofdmenu" "Wat wil je doen?" 20 \
+            "aanmaken"     "VM aanmaken" \
+            "overzicht"    "VM overzicht" \
+            "verwijderen"  "VM verwijderen" \
+            "backup"       "VM backup" \
+            "updaten"      "VMs bijwerken (apt upgrade)" \
+            "gebruikers"   "Gebruikersbeheer (wachtwoord/users)" \
+            "afsluiten"    "Menu sluiten") || break
 
         case "$choice" in
             aanmaken)    create_vm_flow ;;
@@ -541,6 +622,7 @@ main_menu() {
             verwijderen) delete_vm_menu ;;
             backup)      backup_vm_menu ;;
             updaten)     update_vms_menu ;;
+            gebruikers)  manage_users_menu ;;
             afsluiten)   break ;;
         esac
     done
