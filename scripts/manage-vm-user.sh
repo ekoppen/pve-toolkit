@@ -9,6 +9,7 @@
 #   ./manage-vm-user.sh --vmid 110 --add-user jan
 #   ./manage-vm-user.sh --vmid 110 --add-user jan --sudo
 #   ./manage-vm-user.sh --vmid 110 --add-user jan --ssh-key "ssh-ed25519 AAAA..."
+#   ./manage-vm-user.sh --vmid 110 --add-ssh-key admin --ssh-key "ssh-ed25519 AAAA..."
 #   ./manage-vm-user.sh --vmid 110 --del-user jan
 #   ./manage-vm-user.sh --vmid 110 --list-users
 #
@@ -16,6 +17,7 @@
 #   --vmid N            VM ID (verplicht)
 #   --passwd USER       Wachtwoord (her)instellen voor gebruiker
 #   --add-user USER     Nieuwe gebruiker aanmaken
+#   --add-ssh-key USER  SSH key toevoegen aan bestaande gebruiker
 #   --del-user USER     Gebruiker verwijderen
 #   --list-users        Gebruikers tonen op de VM
 #   --sudo              Geef sudo rechten (bij --add-user)
@@ -63,6 +65,7 @@ usage() {
     echo "Acties:"
     echo "  --passwd USER       Wachtwoord (her)instellen voor gebruiker"
     echo "  --add-user USER     Nieuwe gebruiker aanmaken"
+    echo "  --add-ssh-key USER  SSH key toevoegen aan bestaande gebruiker"
     echo "  --del-user USER     Gebruiker verwijderen"
     echo "  --list-users        Gebruikers tonen op de VM"
     echo ""
@@ -77,6 +80,7 @@ usage() {
     echo "Voorbeelden:"
     echo "  $0 --vmid 110 --passwd admin"
     echo "  $0 --vmid 110 --add-user jan --sudo --ssh-key \"ssh-ed25519 AAAA...\""
+    echo "  $0 --vmid 110 --add-ssh-key admin --ssh-key \"ssh-ed25519 AAAA...\""
     echo "  $0 --vmid 110 --del-user jan"
     echo "  $0 --vmid 110 --list-users"
     exit 0
@@ -199,6 +203,40 @@ do_add_user() {
     fi
 }
 
+# SSH key toevoegen aan bestaande gebruiker
+do_add_ssh_key() {
+    local vmid=$1 user=$2 ssh_key=$3
+    local name
+    name=$(qm config "$vmid" 2>/dev/null | grep "^name:" | awk '{print $2}')
+
+    if [[ -z "$ssh_key" ]]; then
+        log_error "Geen SSH key opgegeven (gebruik --ssh-key)"
+    fi
+
+    log_info "[$vmid] $name - SSH key toevoegen voor '$user'..."
+
+    # Check of gebruiker bestaat
+    if ! qm guest exec "$vmid" -- id "$user" &>/dev/null; then
+        log_error "Gebruiker '$user' bestaat niet op VM $vmid ($name)"
+    fi
+
+    # Bepaal home directory
+    local home_dir
+    if [[ "$user" == "root" ]]; then
+        home_dir="/root"
+    else
+        home_dir="/home/${user}"
+    fi
+
+    # SSH key toevoegen aan authorized_keys
+    local ssh_cmd="mkdir -p ${home_dir}/.ssh && echo '${ssh_key}' >> ${home_dir}/.ssh/authorized_keys && chmod 700 ${home_dir}/.ssh && chmod 600 ${home_dir}/.ssh/authorized_keys && chown -R ${user}:${user} ${home_dir}/.ssh"
+    if qm guest exec "$vmid" -- bash -c "$ssh_cmd" 2>/dev/null; then
+        log_success "[$vmid] $name - SSH key toegevoegd voor '$user'"
+    else
+        log_error "[$vmid] $name - SSH key toevoegen mislukt"
+    fi
+}
+
 # Gebruiker verwijderen
 do_del_user() {
     local vmid=$1 user=$2
@@ -280,6 +318,7 @@ while [[ $# -gt 0 ]]; do
         --vmid)       VM_ID=$2;       shift 2 ;;
         --passwd)     ACTION="passwd"; TARGET_USER=$2; shift 2 ;;
         --add-user)   ACTION="add";    TARGET_USER=$2; shift 2 ;;
+        --add-ssh-key) ACTION="add-ssh-key"; TARGET_USER=$2; shift 2 ;;
         --del-user)   ACTION="del";    TARGET_USER=$2; shift 2 ;;
         --list-users) ACTION="list";   shift ;;
         --sudo)       ADD_SUDO=true;   shift ;;
@@ -327,6 +366,14 @@ case "$ACTION" in
             fi
         fi
         do_add_user "$VM_ID" "$TARGET_USER" "$PASSWORD" "$ADD_SUDO" "$SHELL" "$SSH_KEY"
+        ;;
+    add-ssh-key)
+        if [[ -z "$SSH_KEY" ]]; then
+            echo -en "${BLUE}[INFO]${NC} SSH public key: "
+            read -r SSH_KEY
+            [[ -z "$SSH_KEY" ]] && log_error "Geen SSH key opgegeven"
+        fi
+        do_add_ssh_key "$VM_ID" "$TARGET_USER" "$SSH_KEY"
         ;;
     del)
         # Bevestiging vragen

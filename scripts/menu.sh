@@ -498,10 +498,11 @@ manage_users_menu() {
     name=$(qm config "$vmid" 2>/dev/null | grep "^name:" | awk '{print $2}')
 
     local action
-    action=$(menu_select "Gebruikersbeheer" "VM $vmid ($name) - Wat wil je doen?" 16 \
+    action=$(menu_select "Gebruikersbeheer" "VM $vmid ($name) - Wat wil je doen?" 18 \
         "list"   "Gebruikers tonen" \
         "passwd" "Wachtwoord (her)instellen" \
         "add"    "Nieuwe gebruiker aanmaken" \
+        "sshkey" "SSH key toevoegen" \
         "del"    "Gebruiker verwijderen") || return
 
     # Zoek manage-vm-user.sh
@@ -540,6 +541,16 @@ manage_users_menu() {
             local ssh_key
             ssh_key=$(input_box "SSH Key" "SSH public key (leeg = overslaan):" "") || true
             [[ -n "$ssh_key" ]] && cmd_args+=("--ssh-key" "$ssh_key")
+            ;;
+        sshkey)
+            local user
+            user=$(input_box "Gebruiker" "SSH key toevoegen voor welke gebruiker:" "admin") || return
+            [[ -z "$user" ]] && return
+
+            local ssh_key
+            ssh_key=$(input_box "SSH Key" "Plak de SSH public key:" "") || return
+            [[ -z "$ssh_key" ]] && return
+            cmd_args+=("--add-ssh-key" "$user" "--ssh-key" "$ssh_key")
             ;;
         del)
             local user
