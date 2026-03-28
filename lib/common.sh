@@ -16,6 +16,21 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 NC='\033[0m'
 
+# ── Language / Taal ─────────────────────────────
+_SCRIPT_DIR_COMMON="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f "$_SCRIPT_DIR_COMMON/config.sh" ]]; then
+    source "$_SCRIPT_DIR_COMMON/config.sh"
+elif [[ -f "/root/lib/config.sh" ]]; then
+    source "/root/lib/config.sh"
+fi
+LANG_CHOICE="${LANG_CHOICE:-en}"
+
+if [[ -f "$_SCRIPT_DIR_COMMON/lang/${LANG_CHOICE}.sh" ]]; then
+    source "$_SCRIPT_DIR_COMMON/lang/${LANG_CHOICE}.sh"
+elif [[ -f "/root/lib/lang/${LANG_CHOICE}.sh" ]]; then
+    source "/root/lib/lang/${LANG_CHOICE}.sh"
+fi
+
 # ── Logging ───────────────────────────────────
 log_info()    { echo -e "${BLUE}[INFO]${NC} $1"; }
 log_success() { echo -e "${GREEN}[OK]${NC}   $1"; }
