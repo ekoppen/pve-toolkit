@@ -22,4 +22,5 @@ secrets/
 
 # Claude Code
 .claude/
+CLAUDE.local.md
 docs/superpowers/
