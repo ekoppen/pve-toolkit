@@ -10,13 +10,14 @@
 # Gebruik:
 #   ./create-template.sh
 #   ./create-template.sh --id 9000 --storage local-lvm
-#   ./create-template.sh --id 9001 --bridge vmbr1 --name debian-12-cloud
+#   ./create-template.sh --id 9001 --bridge vmbr1 --version 13
 #
 # Opties:
 #   --id ID          Template VM ID (standaard: 9000)
 #   --storage NAAM   Storage backend (standaard: local-lvm)
 #   --bridge NAAM    Netwerk bridge (standaard: vmbr0)
-#   --name NAAM      Template naam (standaard: debian-12-cloud)
+#   --name NAAM      Template naam (standaard: debian-{version}-cloud)
+#   --version 12|13  Debian versie (standaard: 12)
 #   --vlan N         VLAN tag (standaard: geen)
 #   --auto           Non-interactief (geen prompts, voor gebruik vanuit menu)
 #   --help           Toon deze hulptekst
@@ -29,12 +30,32 @@ TEMPLATE_ID=9000
 STORAGE="local-lvm"
 BRIDGE="vmbr0"
 VLAN_TAG=""
-TEMPLATE_NAME="debian-12-cloud"
+DEBIAN_VERSION=""
+TEMPLATE_NAME=""
 
-# Debian 12 Bookworm cloud image
-IMAGE_URL="https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-genericcloud-amd64.qcow2"
-CHECKSUM_URL="https://cloud.debian.org/images/cloud/bookworm/latest/SHA512SUMS"
-IMAGE_FILE="/tmp/debian-12-genericcloud-amd64.qcow2"
+# ── Debian versie configuratie ───────────────
+set_debian_version() {
+    local ver="$1"
+    case "$ver" in
+        12)
+            DEBIAN_CODENAME="bookworm"
+            IMAGE_URL="https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-genericcloud-amd64.qcow2"
+            CHECKSUM_URL="https://cloud.debian.org/images/cloud/bookworm/latest/SHA512SUMS"
+            IMAGE_FILE="/tmp/debian-12-genericcloud-amd64.qcow2"
+            [[ -z "$TEMPLATE_NAME" ]] && TEMPLATE_NAME="debian-12-cloud"
+            ;;
+        13)
+            DEBIAN_CODENAME="trixie"
+            IMAGE_URL="https://cloud.debian.org/images/cloud/trixie/latest/debian-13-genericcloud-amd64.qcow2"
+            CHECKSUM_URL="https://cloud.debian.org/images/cloud/trixie/latest/SHA512SUMS"
+            IMAGE_FILE="/tmp/debian-13-genericcloud-amd64.qcow2"
+            [[ -z "$TEMPLATE_NAME" ]] && TEMPLATE_NAME="debian-13-cloud"
+            ;;
+        *)
+            log_error "${MSG_CREATE_TPL_INVALID_VERSION:-Invalid Debian version: $ver (use 12 or 13)}"
+            ;;
+    esac
+}
 
 # ── Libraries laden (optioneel) ───────────────
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -84,13 +105,15 @@ usage() {
     echo "$MSG_CREATE_TPL_OPT_BRIDGE"
     echo "$MSG_CREATE_TPL_OPT_VLAN"
     echo "$MSG_CREATE_TPL_OPT_NAME"
+    echo "$MSG_CREATE_TPL_OPT_VERSION"
     echo "$MSG_CREATE_TPL_OPT_AUTO"
     echo "$MSG_CREATE_TPL_OPT_HELP"
     echo ""
     echo "$MSG_CREATE_TPL_EXAMPLES"
     echo "  $0"
     echo "  $0 --id 9001 --storage local-lvm"
-    echo "  $0 --id 9000 --bridge vmbr1 --name debian-12-test"
+    echo "  $0 --version 13"
+    echo "  $0 --id 9000 --bridge vmbr1 --version 13"
     echo "  $0 --id 9000 --vlan 100"
     exit 0
 }
@@ -105,11 +128,34 @@ while [[ $# -gt 0 ]]; do
         --bridge)  BRIDGE=$2;      shift 2 ;;
         --vlan)    VLAN_TAG=$2;   shift 2 ;;
         --name)    TEMPLATE_NAME=$2; shift 2 ;;
+        --version) DEBIAN_VERSION=$2; shift 2 ;;
         --auto)    AUTO_MODE=true;  shift ;;
         --help)    usage ;;
         *)         log_error "$MSG_CREATE_TPL_UNKNOWN_OPTION" ;;
     esac
 done
+
+# ── Debian versie selectie ────────────────────
+if [[ -z "$DEBIAN_VERSION" ]]; then
+    if [[ "$AUTO_MODE" == true ]]; then
+        DEBIAN_VERSION=12
+    else
+        echo ""
+        echo -e "${BLUE}${MSG_CREATE_TPL_VERSION_TITLE:-Select Debian version}${NC}"
+        echo ""
+        echo -e "  ${YELLOW}[1]${NC} Debian 12 (Bookworm) - Stable"
+        echo -e "  ${YELLOW}[2]${NC} Debian 13 (Trixie)"
+        echo ""
+        read -rp "  ${MSG_CREATE_TPL_CHOICE_PROMPT:-Choice} [1]: " VERSION_CHOICE
+        VERSION_CHOICE=${VERSION_CHOICE:-1}
+        case $VERSION_CHOICE in
+            2)  DEBIAN_VERSION=13 ;;
+            *)  DEBIAN_VERSION=12 ;;
+        esac
+    fi
+fi
+
+set_debian_version "$DEBIAN_VERSION"
 
 # ── Header ────────────────────────────────────
 echo ""
@@ -117,6 +163,7 @@ echo -e "${BLUE}═════════════════════�
 echo -e "${BLUE}  ${MSG_CREATE_TPL_HEADER}${NC}"
 echo -e "${BLUE}════════════════════════════════════════${NC}"
 echo ""
+log_info "Debian:       $DEBIAN_VERSION ($DEBIAN_CODENAME)"
 log_info "Template ID:  $TEMPLATE_ID"
 log_info "Storage:      $STORAGE"
 log_info "Bridge:       $BRIDGE"

@@ -142,7 +142,7 @@ jobs:
       - name: Create release archive
         run: |
           VERSION=${GITHUB_REF#refs/tags/}
-          tar czf proxmox-templates-${VERSION}.tar.gz \
+          tar czf pve-toolkit-${VERSION}.tar.gz \
             --exclude='.github' \
             --exclude='.git' \
             lib/ snippets/ scripts/ install.sh setup.sh README.md .gitignore
@@ -164,8 +164,8 @@ jobs:
           echo "" >> RELEASE_NOTES.md
           echo "## Installatie" >> RELEASE_NOTES.md
           echo '```bash' >> RELEASE_NOTES.md
-          echo "wget https://github.com/${{ github.repository }}/releases/download/${VERSION}/proxmox-templates-${VERSION}.tar.gz" >> RELEASE_NOTES.md
-          echo "tar xzf proxmox-templates-${VERSION}.tar.gz" >> RELEASE_NOTES.md
+          echo "wget https://github.com/${{ github.repository }}/releases/download/${VERSION}/pve-toolkit-${VERSION}.tar.gz" >> RELEASE_NOTES.md
+          echo "tar xzf pve-toolkit-${VERSION}.tar.gz" >> RELEASE_NOTES.md
           echo "bash setup.sh && bash install.sh" >> RELEASE_NOTES.md
           echo '```' >> RELEASE_NOTES.md
 
@@ -173,5 +173,5 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           body_path: RELEASE_NOTES.md
-          files: proxmox-templates-*.tar.gz
+          files: pve-toolkit-*.tar.gz
           generate_release_notes: true

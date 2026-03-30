@@ -5,8 +5,8 @@
 # Installeert snippets en scripts op Proxmox
 #
 # Gebruik:
-#   scp -r proxmox-templates/ root@pve2:/tmp/
-#   ssh root@pve2 "bash /tmp/proxmox-templates/install.sh"
+#   scp -r pve-toolkit/ root@pve2:/tmp/
+#   ssh root@pve2 "bash /tmp/pve-toolkit/install.sh"
 # ============================================
 
 set -e

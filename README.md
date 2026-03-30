@@ -30,8 +30,8 @@ All cloud-init types display a MOTD (message of the day) with service URLs when 
 
 ```bash
 # 1. Clone the repo on your Proxmox server
-git clone https://github.com/ekoppen/proxmox-templates.git
-cd proxmox-templates
+git clone https://github.com/ekoppen/pve-toolkit.git
+cd pve-toolkit
 
 # 2. Configure with your SSH key and template ID
 bash setup.sh
@@ -181,7 +181,7 @@ When using `--start`, the script waits for the service to become reachable after
 ## Structure
 
 ```
-proxmox-templates/
+pve-toolkit/
 ├── setup.sh                        # First-time configuration (SSH keys, template, storage)
 ├── install.sh                      # Installation on Proxmox
 ├── lib/                            # Shared libraries

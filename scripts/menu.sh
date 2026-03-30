@@ -281,11 +281,18 @@ check_template() {
             fi
 
             if [[ -n "$tpl_script" ]]; then
+                # Debian versiekeuze
+                local deb_version
+                deb_version=$(menu_select "$MSG_MENU_TPL_VERSION_TITLE" \
+                    "$MSG_MENU_TPL_VERSION_PROMPT" 12 \
+                    "12" "Debian 12 (Bookworm) - Stable" \
+                    "13" "Debian 13 (Trixie)") || deb_version="12"
+
                 clear
                 show_banner
                 echo -e "${BLUE}$MSG_MENU_TPL_CREATING${NC}"
                 echo ""
-                bash "$tpl_script" --id "$tpl_id" --auto
+                bash "$tpl_script" --id "$tpl_id" --version "$deb_version" --auto
                 local exit_code=$?
                 echo ""
                 if [[ $exit_code -eq 0 ]]; then
