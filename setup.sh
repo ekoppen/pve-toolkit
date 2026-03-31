@@ -235,28 +235,34 @@ read -rp "  $MSG_SETUP_CHOICE [S]: " DEPLOY_CHOICE
 DEPLOY_CHOICE=${DEPLOY_CHOICE:-S}
 
 DEPLOY_KEY=""
-case $DEPLOY_CHOICE in
-    [Pp])
-        echo ""
-        echo "  $MSG_SETUP_DEPLOY_PASTE_PROMPT"
-        echo "  $MSG_SETUP_PASTE_HINT"
-        echo ""
-        read -r DEPLOY_KEY
-        if [[ "$DEPLOY_KEY" =~ ^ssh-(ed25519|rsa|ecdsa)|^ecdsa-sha2 ]]; then
-            # Vervang deploy key placeholder in alle snippets (→ root authorized_keys)
-            for file in "$SCRIPT_DIR"/snippets/*.yaml; do
-                sed -i "s|DEPLOY_SSH_PUBLIC_KEY_HERE|$DEPLOY_KEY|g" "$file"
-            done
-            echo -e "  ${GREEN}✓ $MSG_SETUP_DEPLOY_SET${NC}"
-        else
-            echo -e "  ${RED}$MSG_SETUP_KEY_INVALID_SKIP ${DEPLOY_KEY:0:30}...${NC}"
-            DEPLOY_KEY=""
-        fi
-        ;;
-    *)
-        echo -e "  ${YELLOW}$MSG_SETUP_SKIPPED${NC}"
-        ;;
-esac
+
+# Detecteer of de gebruiker direct een SSH key heeft geplakt
+if [[ "$DEPLOY_CHOICE" =~ ^ssh-(ed25519|rsa|ecdsa)|^ecdsa-sha2 ]]; then
+    DEPLOY_KEY="$DEPLOY_CHOICE"
+elif [[ "$DEPLOY_CHOICE" == [Pp] ]]; then
+    echo ""
+    echo "  $MSG_SETUP_DEPLOY_PASTE_PROMPT"
+    echo "  $MSG_SETUP_PASTE_HINT"
+    echo ""
+    read -r DEPLOY_KEY
+elif [[ "$DEPLOY_CHOICE" != [Ss] && -n "$DEPLOY_CHOICE" ]]; then
+    echo -e "  ${YELLOW}$MSG_SETUP_SKIPPED${NC}"
+fi
+
+if [[ -n "$DEPLOY_KEY" ]]; then
+    if [[ "$DEPLOY_KEY" =~ ^ssh-(ed25519|rsa|ecdsa)|^ecdsa-sha2 ]]; then
+        # Vervang deploy key placeholder in alle snippets (→ root authorized_keys)
+        for file in "$SCRIPT_DIR"/snippets/*.yaml; do
+            sed -i "s|DEPLOY_SSH_PUBLIC_KEY_HERE|$DEPLOY_KEY|g" "$file"
+        done
+        echo -e "  ${GREEN}✓ $MSG_SETUP_DEPLOY_SET${NC}"
+    else
+        echo -e "  ${RED}$MSG_SETUP_KEY_INVALID_SKIP ${DEPLOY_KEY:0:30}...${NC}"
+        DEPLOY_KEY=""
+    fi
+else
+    echo -e "  ${YELLOW}$MSG_SETUP_SKIPPED${NC}"
+fi
 
 echo ""
 
