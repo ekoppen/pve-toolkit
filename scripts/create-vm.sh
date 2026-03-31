@@ -246,7 +246,12 @@ fi
 log_info "$MSG_CREATE_VM_CONFIGURING_CLOUDINIT"
 qm set "$VM_ID" --cicustom "user=${SNIPPET}"
 qm set "$VM_ID" --ipconfig0 ip=dhcp
+qm set "$VM_ID" --ciupgrade 1
 log_success "$MSG_CREATE_VM_SNIPPET_LINKED"
+
+# Hostname instellen via cloud-init
+qm set "$VM_ID" --cihostname "$VM_NAME"
+log_success "$MSG_CREATE_VM_HOSTNAME_SET"
 
 # Disk resizen indien gewenst
 if [[ -n "$DISK_SIZE" ]]; then
@@ -278,13 +283,6 @@ if [[ "$START_AFTER" == true ]]; then
             break
         fi
     done
-
-    # Hostname instellen via guest agent
-    if qm guest cmd "$VM_ID" ping 2>/dev/null; then
-        log_info "$MSG_CREATE_VM_SETTING_HOSTNAME"
-        qm guest exec "$VM_ID" -- hostnamectl set-hostname "$VM_NAME" 2>/dev/null || true
-        log_success "$MSG_CREATE_VM_HOSTNAME_SET"
-    fi
 
     # Service health check
     if [[ -n "$IP" && "$USE_REGISTRY" == true ]]; then

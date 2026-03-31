@@ -111,10 +111,10 @@ jobs:
             ISSUES=$((ISSUES + 1))
           fi
 
-          # Check dat SSH key placeholder aanwezig is (niet een echte key)
+          # Check dat SSH key placeholders aanwezig zijn (niet echte keys)
           for file in snippets/*.yaml; do
-            if grep -q "YOUR_SSH_PUBLIC_KEY_HERE" "$file"; then
-              echo "  ✓ $file: placeholder aanwezig"
+            if grep -q "YOUR_SSH_PUBLIC_KEY_HERE" "$file" && grep -q "DEPLOY_SSH_PUBLIC_KEY_HERE" "$file"; then
+              echo "  ✓ $file: placeholders aanwezig"
             elif grep -qP "ssh-(ed25519|rsa)\s+AAAA" "$file"; then
               echo "  ⚠ $file: bevat wat lijkt op een echte SSH key"
               echo "    Zorg dat je geen persoonlijke keys commit!"

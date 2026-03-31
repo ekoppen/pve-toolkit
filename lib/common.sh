@@ -32,10 +32,12 @@ elif [[ -f "/root/lib/lang/${LANG_CHOICE}.sh" ]]; then
 fi
 
 # ── Logging ───────────────────────────────────
-log_info()    { echo -e "${BLUE}[INFO]${NC} $1"; }
-log_success() { echo -e "${GREEN}[OK]${NC}   $1"; }
-log_warn()    { echo -e "${YELLOW}[WARN]${NC} $1"; }
-log_error()   { echo -e "${RED}[FOUT]${NC} $1"; exit 1; }
+# _expand resolves \$var references in MSG_* strings from lang files
+_expand() { eval echo "\"$1\""; }
+log_info()    { echo -e "${BLUE}[INFO]${NC} $(_expand "$1")"; }
+log_success() { echo -e "${GREEN}[OK]${NC}   $(_expand "$1")"; }
+log_warn()    { echo -e "${YELLOW}[WARN]${NC} $(_expand "$1")"; }
+log_error()   { echo -e "${RED}[FOUT]${NC} $(_expand "$1")"; exit 1; }
 
 # ── Whiptail ──────────────────────────────────
 BACKTITLE="Proxmox VM Manager"

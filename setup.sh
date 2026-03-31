@@ -243,15 +243,9 @@ case $DEPLOY_CHOICE in
         echo ""
         read -r DEPLOY_KEY
         if [[ "$DEPLOY_KEY" =~ ^ssh-(ed25519|rsa|ecdsa)|^ecdsa-sha2 ]]; then
-            # Voeg deploy key toe aan alle snippets
+            # Vervang deploy key placeholder in alle snippets (→ root authorized_keys)
             for file in "$SCRIPT_DIR"/snippets/*.yaml; do
-                if [[ ${#VALID_KEYS[@]} -gt 0 ]]; then
-                    # Voeg toe na de eerste SSH key
-                    sed -i "/$(echo "${VALID_KEYS[0]}" | head -c 40)/a\\      - $DEPLOY_KEY" "$file"
-                else
-                    # Vervang placeholder als er nog geen keys zijn
-                    sed -i "s|YOUR_SSH_PUBLIC_KEY_HERE|$DEPLOY_KEY|g" "$file"
-                fi
+                sed -i "s|DEPLOY_SSH_PUBLIC_KEY_HERE|$DEPLOY_KEY|g" "$file"
             done
             echo -e "  ${GREEN}✓ $MSG_SETUP_DEPLOY_SET${NC}"
         else

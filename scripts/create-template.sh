@@ -76,10 +76,11 @@ if [[ "$USE_LIB" != true ]]; then
     YELLOW='\033[1;33m'
     BLUE='\033[0;34m'
     NC='\033[0m'
-    log_info()    { echo -e "${BLUE}[INFO]${NC} $1"; }
-    log_success() { echo -e "${GREEN}[OK]${NC}   $1"; }
-    log_warn()    { echo -e "${YELLOW}[WARN]${NC} $1"; }
-    log_error()   { echo -e "${RED}[FOUT]${NC} $1"; exit 1; }
+    _expand() { eval echo "\"$1\""; }
+    log_info()    { echo -e "${BLUE}[INFO]${NC} $(_expand "$1")"; }
+    log_success() { echo -e "${GREEN}[OK]${NC}   $(_expand "$1")"; }
+    log_warn()    { echo -e "${YELLOW}[WARN]${NC} $(_expand "$1")"; }
+    log_error()   { echo -e "${RED}[FOUT]${NC} $(_expand "$1")"; exit 1; }
     # Load lang file in fallback path
     for _lp in "$SCRIPT_DIR/../lib" "/root/lib"; do
         if [[ -f "$_lp/config.sh" ]]; then source "$_lp/config.sh" 2>/dev/null || true; fi
