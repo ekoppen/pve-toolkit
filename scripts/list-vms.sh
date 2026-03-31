@@ -53,7 +53,7 @@ for vmid in $(qm list 2>/dev/null | tail -n +2 | awk '{print $1}'); do
     # Probeer IP op te halen als VM draait
     if [[ "$STATUS" == "running" ]]; then
         IP=$(qm guest cmd "$vmid" network-get-interfaces 2>/dev/null | \
-             grep -oP '"ip-address"\s*:\s*"\K[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | \
+             sed -n 's/.*"ip-address"\s*:\s*"\([0-9]\+\.[0-9]\+\.[0-9]\+\.[0-9]\+\)".*/\1/p' | \
              grep -v '^127\.' | head -1)
         [[ -z "$IP" ]] && IP="$MSG_LIST_VMS_WAITING"
         STATUS_COLOR=$GREEN

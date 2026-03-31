@@ -186,7 +186,7 @@ if [[ "$USE_REGISTRY" == true ]]; then
     validate_disk_size "$DISK_SIZE"
     check_host_memory "$MEMORY"
     if [[ -n "$DISK_SIZE" ]]; then
-        DISK_GB=$(echo "$DISK_SIZE" | grep -oP '^[0-9]+')
+        DISK_GB=$(echo "$DISK_SIZE" | grep -Eo '^[0-9]+')
         check_storage_space "$STORAGE" "$DISK_GB"
     fi
 fi
@@ -273,7 +273,7 @@ if [[ "$START_AFTER" == true ]]; then
     for _ in $(seq 1 12); do
         sleep 5
         IP=$(qm guest cmd "$VM_ID" network-get-interfaces 2>/dev/null | \
-             grep -oP '"ip-address"\s*:\s*"\K[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | \
+             sed -n 's/.*"ip-address"\s*:\s*"\([0-9]\+\.[0-9]\+\.[0-9]\+\.[0-9]\+\)".*/\1/p' | \
              grep -v '^127\.' | head -1)
         if [[ -n "$IP" ]]; then
             break
@@ -294,7 +294,7 @@ if [[ "$START_AFTER" == true ]]; then
         for _ in $(seq 1 6); do
             sleep 5
             PUBKEY=$(qm guest exec "$VM_ID" -- cat /home/admin/.ssh/id_ed25519.pub 2>/dev/null | \
-                     grep -oP 'ssh-ed25519\s+\S+(\s+\S+)?' || true)
+                     grep -Eo 'ssh-ed25519 [A-Za-z0-9+/=]+( [^ ]+)?' || true)
             [[ -n "$PUBKEY" ]] && break
         done
         if [[ -n "$PUBKEY" ]]; then

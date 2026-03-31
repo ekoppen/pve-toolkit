@@ -122,7 +122,7 @@ detect_latest_version() {
     fi
 
     # Versie uit URL halen: .../releases/tag/13.2 → 13.2
-    echo "$redirect_url" | grep -oP '/tag/\K[0-9]+\.[0-9]+.*$' | tr -d '\r\n'
+    echo "$redirect_url" | sed -n 's|.*/tag/\([0-9]\+\.[0-9]\+.*\)$|\1|p' | tr -d '\r\n'
 }
 
 # ── Argumenten verwerken ──────────────────────
@@ -233,7 +233,7 @@ fi
 if [[ "$USE_LIB" == true ]]; then
     validate_disk_size "$DISK_SIZE"
     check_host_memory "$MEMORY"
-    DISK_GB=$(echo "$DISK_SIZE" | grep -oP '^[0-9]+')
+    DISK_GB=$(echo "$DISK_SIZE" | grep -Eo '^[0-9]+')
     check_storage_space "$STORAGE" "$DISK_GB"
 fi
 
@@ -326,7 +326,7 @@ if [[ "$START_AFTER" == true ]]; then
     for _ in $(seq 1 24); do
         sleep 5
         IP=$(qm guest cmd "$VM_ID" network-get-interfaces 2>/dev/null | \
-             grep -oP '"ip-address"\s*:\s*"\K[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | \
+             sed -n 's/.*"ip-address"\s*:\s*"\([0-9]\+\.[0-9]\+\.[0-9]\+\.[0-9]\+\)".*/\1/p' | \
              grep -v '^127\.' | head -1) || true
         if [[ -n "$IP" ]]; then
             break
