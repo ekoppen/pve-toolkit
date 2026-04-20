@@ -84,5 +84,9 @@ fi
 # Verwijder VM
 echo -e "${BLUE}[INFO]${NC} $MSG_DELETE_VM_DELETING"
 qm destroy "$VM_ID" --purge
+
+# Per-VM meta-data snippet opruimen (indien aanwezig)
+rm -f "/var/lib/vz/snippets/vm${VM_ID}-meta.yaml"
+
 echo -e "${GREEN}[OK]${NC}   $MSG_DELETE_VM_DELETED"
 echo ""

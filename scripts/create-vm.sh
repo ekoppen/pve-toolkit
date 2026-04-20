@@ -244,7 +244,17 @@ fi
 
 # Cloud-init snippet koppelen
 log_info "$MSG_CREATE_VM_CONFIGURING_CLOUDINIT"
-qm set "$VM_ID" --cicustom "user=${SNIPPET}"
+
+# Per-VM meta-data snippet zodat cloud-init de hostname correct zet.
+# Zonder dit geeft Proxmox bij --cicustom user=... geen local-hostname door
+# en blijft de VM op "localhost" staan.
+META_SNIPPET_FILE="/var/lib/vz/${SNIPPET_PATH}/vm${VM_ID}-meta.yaml"
+cat > "$META_SNIPPET_FILE" <<EOF
+instance-id: iid-${VM_ID}
+local-hostname: ${VM_NAME}
+EOF
+
+qm set "$VM_ID" --cicustom "user=${SNIPPET},meta=${SNIPPET_STORAGE}:${SNIPPET_PATH}/vm${VM_ID}-meta.yaml"
 qm set "$VM_ID" --ipconfig0 ip=dhcp
 qm set "$VM_ID" --ciupgrade 1
 log_success "$MSG_CREATE_VM_SNIPPET_LINKED"
