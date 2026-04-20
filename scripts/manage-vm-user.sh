@@ -216,7 +216,7 @@ do_add_user() {
     if [[ -n "$ssh_key" ]]; then
         local key_encoded
         key_encoded=$(printf '%s' "$ssh_key" | base64)
-        local ssh_cmd="mkdir -p /home/$user/.ssh && echo '$key_encoded' | base64 -d >> /home/$user/.ssh/authorized_keys && chmod 700 /home/$user/.ssh && chmod 600 /home/$user/.ssh/authorized_keys && chown -R $user:$user /home/$user/.ssh"
+        local ssh_cmd="mkdir -p /home/$user/.ssh && touch /home/$user/.ssh/authorized_keys && { printf '\n'; echo '$key_encoded' | base64 -d; printf '\n'; } >> /home/$user/.ssh/authorized_keys && chmod 700 /home/$user/.ssh && chmod 600 /home/$user/.ssh/authorized_keys && chown -R $user:$user /home/$user/.ssh"
         if qm guest exec "$vmid" -- bash -c "$ssh_cmd" 2>/dev/null; then
             log_success "$MSG_USER_ADD_SSH_ADDED"
         else
@@ -253,7 +253,7 @@ do_add_ssh_key() {
     # SSH key toevoegen aan authorized_keys (via base64 om speciale tekens veilig door te geven)
     local key_encoded
     key_encoded=$(printf '%s' "$ssh_key" | base64)
-    local ssh_cmd="mkdir -p ${home_dir}/.ssh && echo '$key_encoded' | base64 -d >> ${home_dir}/.ssh/authorized_keys && chmod 700 ${home_dir}/.ssh && chmod 600 ${home_dir}/.ssh/authorized_keys && chown -R ${user}:${user} ${home_dir}/.ssh"
+    local ssh_cmd="mkdir -p ${home_dir}/.ssh && touch ${home_dir}/.ssh/authorized_keys && { printf '\n'; echo '$key_encoded' | base64 -d; printf '\n'; } >> ${home_dir}/.ssh/authorized_keys && chmod 700 ${home_dir}/.ssh && chmod 600 ${home_dir}/.ssh/authorized_keys && chown -R ${user}:${user} ${home_dir}/.ssh"
     if qm guest exec "$vmid" -- bash -c "$ssh_cmd" 2>/dev/null; then
         log_success "$MSG_USER_SSH_ADDED"
     else
