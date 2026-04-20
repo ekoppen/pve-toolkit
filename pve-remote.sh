@@ -147,7 +147,8 @@ do_install() {
     local ip=$1 user=$2
 
     log_info "$MSG_REMOTE_COPYING"
-    if ! scp_run -r -q "$SCRIPT_DIR/" "${user}@${ip}:/tmp/pve-toolkit/"; then
+    ssh_run "${user}@${ip}" "rm -rf /tmp/pve-toolkit && mkdir -p /tmp/pve-toolkit" || true
+    if ! scp_run -r -q "$SCRIPT_DIR/"* "${user}@${ip}:/tmp/pve-toolkit/"; then
         log_error "$MSG_REMOTE_COPY_FAILED"
     fi
 
