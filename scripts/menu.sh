@@ -619,13 +619,19 @@ manage_users_menu() {
     vmid=$(input_box "$MSG_MENU_VM_ID_TITLE" "$MSG_MENU_USERS_VMID_PROMPT" "") || return
     [[ -z "$vmid" ]] && return
 
-    if ! qm status "$vmid" &>/dev/null 2>&1; then
+    local kind
+    kind=$(guest_type "$vmid")
+    if [[ -z "$kind" ]]; then
         msg_info "$MSG_COMMON_ERROR" "$(_expand "$MSG_MENU_USERS_VM_NOT_FOUND")"
         return
     fi
 
     local name
-    name=$(qm config "$vmid" 2>/dev/null | grep "^name:" | awk '{print $2}')
+    if [[ "$kind" == "vm" ]]; then
+        name=$(qm config "$vmid" 2>/dev/null | grep "^name:" | awk '{print $2}')
+    else
+        name=$(pct config "$vmid" 2>/dev/null | grep "^hostname:" | awk '{print $2}')
+    fi
 
     local action
     action=$(menu_select "$MSG_MENU_USERS_TITLE" "$(_expand "$MSG_MENU_USERS_PROMPT")" 18 \

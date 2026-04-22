@@ -95,25 +95,59 @@ usage() {
     exit 0
 }
 
-# Controleer of VM draait en guest agent beschikbaar is
+# Detecteer VM (qm) of LXC (pct), zet GUEST_KIND + controleer dat de guest
+# draait. Voor VMs moet óók de guest agent beschikbaar zijn; LXCs gebruiken
+# pct exec direct.
+GUEST_KIND=""
 check_vm_ready() {
     local vmid=$1
 
-    # Check of VM bestaat
-    if ! qm status "$vmid" &>/dev/null 2>&1; then
+    if qm status "$vmid" &>/dev/null 2>&1; then
+        GUEST_KIND="vm"
+    elif pct status "$vmid" &>/dev/null 2>&1; then
+        GUEST_KIND="lxc"
+    else
         log_error "$MSG_USER_VM_NOT_FOUND"
     fi
 
-    # Check of VM draait
     local status
-    status=$(qm status "$vmid" 2>/dev/null | awk '{print $2}')
+    if [[ "$GUEST_KIND" == "vm" ]]; then
+        status=$(qm status "$vmid" 2>/dev/null | awk '{print $2}')
+    else
+        status=$(pct status "$vmid" 2>/dev/null | awk '{print $2}')
+    fi
     if [[ "$status" != "running" ]]; then
         log_error "$MSG_USER_VM_NOT_RUNNING"
     fi
 
-    # Check guest agent
-    if ! qm guest cmd "$vmid" ping &>/dev/null; then
-        log_error "$MSG_USER_NO_AGENT"
+    if [[ "$GUEST_KIND" == "vm" ]]; then
+        if ! qm guest cmd "$vmid" ping &>/dev/null; then
+            log_error "$MSG_USER_NO_AGENT"
+        fi
+    fi
+}
+
+# Uniforme exec: voert commando uit in de guest, los van VM/LXC.
+# Gebruik: guest_exec <id> -- <cmd> [args...]  of  guest_exec <id> bash -c '...'
+guest_exec() {
+    local id=$1
+    shift
+    # Sla een eventuele "--" separator over (qm guest exec verwacht die, pct exec niet)
+    [[ "$1" == "--" ]] && shift
+    if [[ "$GUEST_KIND" == "lxc" ]]; then
+        pct exec "$id" -- "$@"
+    else
+        qm guest exec "$id" -- "$@"
+    fi
+}
+
+# Hostname/naam van guest opvragen
+guest_name() {
+    local id=$1
+    if [[ "$GUEST_KIND" == "lxc" ]]; then
+        pct config "$id" 2>/dev/null | grep "^hostname:" | awk '{print $2}'
+    else
+        qm config "$id" 2>/dev/null | grep "^name:" | awk '{print $2}'
     fi
 }
 
@@ -151,19 +185,19 @@ ask_password() {
 do_passwd() {
     local vmid=$1 user=$2 password=$3
     local name
-    name=$(qm config "$vmid" 2>/dev/null | grep "^name:" | awk '{print $2}')
+    name=$(guest_name "$vmid")
 
     log_info "$MSG_USER_PASSWD_SETTING"
 
     # Check of gebruiker bestaat op de VM
-    if ! qm guest exec "$vmid" -- id "$user" &>/dev/null; then
+    if ! guest_exec "$vmid" -- id "$user" &>/dev/null; then
         log_error "$MSG_USER_PASSWD_NOT_EXIST"
     fi
 
     # Wachtwoord instellen via chpasswd (input via base64 om injectie te voorkomen)
     local encoded
     encoded=$(printf '%s:%s' "$user" "$password" | base64)
-    if qm guest exec "$vmid" -- bash -c "echo '$encoded' | base64 -d | chpasswd" 2>/dev/null; then
+    if guest_exec "$vmid" -- bash -c "echo '$encoded' | base64 -d | chpasswd" 2>/dev/null; then
         log_success "$MSG_USER_PASSWD_SET"
     else
         log_error "$MSG_USER_PASSWD_FAILED"
@@ -174,12 +208,12 @@ do_passwd() {
 do_add_user() {
     local vmid=$1 user=$2 password=$3 add_sudo=$4 shell=$5 ssh_key=$6
     local name
-    name=$(qm config "$vmid" 2>/dev/null | grep "^name:" | awk '{print $2}')
+    name=$(guest_name "$vmid")
 
     log_info "$MSG_USER_ADD_CREATING"
 
     # Check of gebruiker al bestaat
-    if qm guest exec "$vmid" -- id "$user" &>/dev/null; then
+    if guest_exec "$vmid" -- id "$user" &>/dev/null; then
         log_error "$MSG_USER_ADD_EXISTS"
     fi
 
@@ -189,7 +223,7 @@ do_add_user() {
     fi
 
     # Gebruiker aanmaken
-    if ! qm guest exec "$vmid" -- useradd -m -s "$shell" "$user" 2>/dev/null; then
+    if ! guest_exec "$vmid" -- useradd -m -s "$shell" "$user" 2>/dev/null; then
         log_error "$MSG_USER_ADD_FAILED"
     fi
     log_success "$MSG_USER_ADD_CREATED"
@@ -198,7 +232,7 @@ do_add_user() {
     if [[ -n "$password" ]]; then
         local encoded
         encoded=$(printf '%s:%s' "$user" "$password" | base64)
-        if qm guest exec "$vmid" -- bash -c "echo '$encoded' | base64 -d | chpasswd" 2>/dev/null; then
+        if guest_exec "$vmid" -- bash -c "echo '$encoded' | base64 -d | chpasswd" 2>/dev/null; then
             log_success "$MSG_USER_ADD_PASSWORD_SET"
         else
             log_warn "$MSG_USER_ADD_PASSWORD_FAILED"
@@ -207,7 +241,7 @@ do_add_user() {
 
     # Sudo rechten
     if [[ "$add_sudo" == true ]]; then
-        if qm guest exec "$vmid" -- bash -c "usermod -aG sudo $user && echo '$user ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/$user && chmod 440 /etc/sudoers.d/$user" 2>/dev/null; then
+        if guest_exec "$vmid" -- bash -c "usermod -aG sudo $user && echo '$user ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/$user && chmod 440 /etc/sudoers.d/$user" 2>/dev/null; then
             log_success "$MSG_USER_ADD_SUDO_GRANTED"
         else
             log_warn "$MSG_USER_ADD_SUDO_FAILED"
@@ -219,7 +253,7 @@ do_add_user() {
         local key_encoded
         key_encoded=$(printf '%s' "$ssh_key" | base64)
         local ssh_cmd="mkdir -p /home/$user/.ssh && touch /home/$user/.ssh/authorized_keys && { printf '\n'; echo '$key_encoded' | base64 -d; printf '\n'; } >> /home/$user/.ssh/authorized_keys && chmod 700 /home/$user/.ssh && chmod 600 /home/$user/.ssh/authorized_keys && chown -R $user:$user /home/$user/.ssh"
-        if qm guest exec "$vmid" -- bash -c "$ssh_cmd" 2>/dev/null; then
+        if guest_exec "$vmid" -- bash -c "$ssh_cmd" 2>/dev/null; then
             log_success "$MSG_USER_ADD_SSH_ADDED"
         else
             log_warn "$MSG_USER_ADD_SSH_FAILED"
@@ -231,7 +265,7 @@ do_add_user() {
 do_add_ssh_key() {
     local vmid=$1 user=$2 ssh_key=$3
     local name
-    name=$(qm config "$vmid" 2>/dev/null | grep "^name:" | awk '{print $2}')
+    name=$(guest_name "$vmid")
 
     if [[ -z "$ssh_key" ]]; then
         log_error "$MSG_USER_SSH_NO_KEY"
@@ -240,7 +274,7 @@ do_add_ssh_key() {
     log_info "$MSG_USER_SSH_ADDING"
 
     # Check of gebruiker bestaat
-    if ! qm guest exec "$vmid" -- id "$user" &>/dev/null; then
+    if ! guest_exec "$vmid" -- id "$user" &>/dev/null; then
         log_error "$MSG_USER_SSH_NOT_EXIST"
     fi
 
@@ -256,7 +290,7 @@ do_add_ssh_key() {
     local key_encoded
     key_encoded=$(printf '%s' "$ssh_key" | base64)
     local ssh_cmd="mkdir -p ${home_dir}/.ssh && touch ${home_dir}/.ssh/authorized_keys && { printf '\n'; echo '$key_encoded' | base64 -d; printf '\n'; } >> ${home_dir}/.ssh/authorized_keys && chmod 700 ${home_dir}/.ssh && chmod 600 ${home_dir}/.ssh/authorized_keys && chown -R ${user}:${user} ${home_dir}/.ssh"
-    if qm guest exec "$vmid" -- bash -c "$ssh_cmd" 2>/dev/null; then
+    if guest_exec "$vmid" -- bash -c "$ssh_cmd" 2>/dev/null; then
         log_success "$MSG_USER_SSH_ADDED"
     else
         log_error "$MSG_USER_SSH_FAILED"
@@ -267,7 +301,7 @@ do_add_ssh_key() {
 do_del_user() {
     local vmid=$1 user=$2
     local name
-    name=$(qm config "$vmid" 2>/dev/null | grep "^name:" | awk '{print $2}')
+    name=$(guest_name "$vmid")
 
     # Bescherm systeemgebruikers
     case "$user" in
@@ -279,12 +313,12 @@ do_del_user() {
     log_info "$MSG_USER_DEL_DELETING"
 
     # Check of gebruiker bestaat
-    if ! qm guest exec "$vmid" -- id "$user" &>/dev/null; then
+    if ! guest_exec "$vmid" -- id "$user" &>/dev/null; then
         log_error "$MSG_USER_DEL_NOT_EXIST"
     fi
 
     # Verwijder gebruiker + home directory + sudoers
-    if qm guest exec "$vmid" -- bash -c "userdel -r '$user' 2>/dev/null; rm -f '/etc/sudoers.d/${user}'" 2>/dev/null; then
+    if guest_exec "$vmid" -- bash -c "userdel -r '$user' 2>/dev/null; rm -f '/etc/sudoers.d/${user}'" 2>/dev/null; then
         log_success "$MSG_USER_DEL_DELETED"
     else
         log_error "$MSG_USER_DEL_FAILED"
@@ -295,14 +329,14 @@ do_del_user() {
 do_list_users() {
     local vmid=$1
     local name
-    name=$(qm config "$vmid" 2>/dev/null | grep "^name:" | awk '{print $2}')
+    name=$(guest_name "$vmid")
 
     log_info "$MSG_USER_LIST_FETCHING"
     echo ""
 
     # Toon human users (UID >= 1000) + root
     local result
-    result=$(qm guest exec "$vmid" -- bash -c "awk -F: '\$3 == 0 || \$3 >= 1000 {printf \"  %-15s UID=%-6s %s\n\", \$1, \$3, \$6}' /etc/passwd" 2>/dev/null)
+    result=$(guest_exec "$vmid" -- bash -c "awk -F: '\$3 == 0 || \$3 >= 1000 {printf \"  %-15s UID=%-6s %s\n\", \$1, \$3, \$6}' /etc/passwd" 2>/dev/null)
 
     if [[ -n "$result" ]]; then
         echo -e "${BLUE}  ${MSG_USER_LIST_HEADER_USER}       ${MSG_USER_LIST_HEADER_UID}       ${MSG_USER_LIST_HEADER_HOME}${NC}"
@@ -315,14 +349,14 @@ do_list_users() {
     # Toon sudo gebruikers
     echo ""
     local sudo_users
-    sudo_users=$(qm guest exec "$vmid" -- bash -c "getent group sudo 2>/dev/null | cut -d: -f4" 2>/dev/null)
+    sudo_users=$(guest_exec "$vmid" -- bash -c "getent group sudo 2>/dev/null | cut -d: -f4" 2>/dev/null)
     if [[ -n "$sudo_users" ]]; then
         echo -e "  ${YELLOW}${MSG_USER_LIST_SUDO}${NC} $sudo_users"
     fi
 
     # Toon SSH-enabled gebruikers
     local ssh_users
-    ssh_users=$(qm guest exec "$vmid" -- bash -c "for u in /home/*/.ssh/authorized_keys /root/.ssh/authorized_keys; do [ -f \"\$u\" ] && echo \"\$u\" | sed 's|/home/||;s|/.ssh/authorized_keys||;s|/root/.ssh/authorized_keys|root|'; done" 2>/dev/null)
+    ssh_users=$(guest_exec "$vmid" -- bash -c "for u in /home/*/.ssh/authorized_keys /root/.ssh/authorized_keys; do [ -f \"\$u\" ] && echo \"\$u\" | sed 's|/home/||;s|/.ssh/authorized_keys||;s|/root/.ssh/authorized_keys|root|'; done" 2>/dev/null)
     if [[ -n "$ssh_users" ]]; then
         echo -e "  ${GREEN}${MSG_USER_LIST_SSH}${NC}  $ssh_users"
     fi
