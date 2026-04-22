@@ -118,6 +118,8 @@ check_vm_ready() {
 }
 
 # Vraag wachtwoord interactief (twee keer, met verificatie)
+# Resultaat wordt in globale ASKED_PASSWORD gezet (niet via stdout, want
+# callers zouden dan de prompts opvangen in command substitution).
 ask_password() {
     local pass1 pass2
     echo -en "${BLUE}[INFO]${NC} $MSG_USER_NEW_PASSWORD" >&2
@@ -142,7 +144,7 @@ ask_password() {
         return 1
     fi
 
-    echo "$pass1"
+    ASKED_PASSWORD="$pass1"
 }
 
 # Wachtwoord (her)instellen voor bestaande gebruiker
@@ -375,7 +377,8 @@ case "$ACTION" in
     passwd)
         # Wachtwoord vragen als niet meegegeven
         if [[ -z "$PASSWORD" ]]; then
-            PASSWORD=$(ask_password)
+            ask_password
+            PASSWORD="$ASKED_PASSWORD"
         fi
         do_passwd "$VM_ID" "$TARGET_USER" "$PASSWORD"
         ;;
@@ -386,7 +389,8 @@ case "$ACTION" in
             echo -en "${BLUE}[INFO]${NC} $MSG_USER_ADD_SET_PASSWORD_PROMPT"
             read -r answer
             if [[ "$answer" =~ ^[$MSG_CONFIRM_YES_CHARS]$ ]]; then
-                PASSWORD=$(ask_password)
+                ask_password
+                PASSWORD="$ASKED_PASSWORD"
             fi
         fi
         do_add_user "$VM_ID" "$TARGET_USER" "$PASSWORD" "$ADD_SUDO" "$SHELL" "$SSH_KEY"
