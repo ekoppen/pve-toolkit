@@ -73,37 +73,61 @@ usage() {
     exit 0
 }
 
-# Update een enkele VM via guest agent
+# Update een enkele VM (via guest agent) of LXC (via pct exec)
 update_vm() {
     local vmid=$1
-    local name
-    name=$(qm config "$vmid" 2>/dev/null | grep "^name:" | awk '{print $2}')
+    local name=""
+    local kind=""
 
-    # Check of VM draait
+    if qm status "$vmid" &>/dev/null 2>&1; then
+        kind="vm"
+        name=$(qm config "$vmid" 2>/dev/null | grep "^name:" | awk '{print $2}')
+    elif pct status "$vmid" &>/dev/null 2>&1; then
+        kind="lxc"
+        name=$(pct config "$vmid" 2>/dev/null | grep "^hostname:" | awk '{print $2}')
+    else
+        return 1
+    fi
+
+    # Check of guest draait
     local status
-    status=$(qm status "$vmid" 2>/dev/null | awk '{print $2}')
+    if [[ "$kind" == "vm" ]]; then
+        status=$(qm status "$vmid" 2>/dev/null | awk '{print $2}')
+    else
+        status=$(pct status "$vmid" 2>/dev/null | awk '{print $2}')
+    fi
     if [[ "$status" != "running" ]]; then
         log_warn "$MSG_UPDATE_VM_SKIPPED"
         return 2
     fi
 
-    # Check of guest agent beschikbaar is
-    if ! qm guest cmd "$vmid" ping &>/dev/null; then
-        log_warn "$MSG_UPDATE_VM_NO_AGENT"
-        return 1
-    fi
-
-    log_info "$MSG_UPDATE_VM_UPDATING"
-    if qm guest exec "$vmid" -- bash -c "apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y -qq" 2>/dev/null; then
-        log_success "$MSG_UPDATE_VM_UPDATED"
-        return 0
+    if [[ "$kind" == "vm" ]]; then
+        # Check of guest agent beschikbaar is
+        if ! qm guest cmd "$vmid" ping &>/dev/null; then
+            log_warn "$MSG_UPDATE_VM_NO_AGENT"
+            return 1
+        fi
+        log_info "$MSG_UPDATE_VM_UPDATING"
+        if qm guest exec "$vmid" -- bash -c "apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y -qq" 2>/dev/null; then
+            log_success "$MSG_UPDATE_VM_UPDATED"
+            return 0
+        else
+            log_warn "$MSG_UPDATE_VM_FAILED"
+            return 1
+        fi
     else
-        log_warn "$MSG_UPDATE_VM_FAILED"
-        return 1
+        log_info "$MSG_UPDATE_VM_UPDATING"
+        if pct exec "$vmid" -- bash -c "apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y -qq" 2>/dev/null; then
+            log_success "$MSG_UPDATE_VM_UPDATED"
+            return 0
+        else
+            log_warn "$MSG_UPDATE_VM_FAILED"
+            return 1
+        fi
     fi
 }
 
-# Alle draaiende VMs ophalen (exclusief templates)
+# Alle draaiende VMs + LXCs ophalen (exclusief templates)
 get_running_vms() {
     qm list 2>/dev/null | tail -n +2 | while read -r line; do
         local vmid status
@@ -115,6 +139,14 @@ get_running_vms() {
             [[ "$is_tpl" != "1" ]] && echo "$vmid"
         fi
     done
+    if command -v pct &>/dev/null; then
+        pct list 2>/dev/null | tail -n +2 | while read -r line; do
+            local ctid status
+            ctid=$(echo "$line" | awk '{print $1}')
+            status=$(echo "$line" | awk '{print $2}')
+            [[ "$status" == "running" ]] && echo "$ctid"
+        done
+    fi
 }
 
 # ── Argumenten verwerken ──────────────────────
@@ -184,11 +216,17 @@ if [[ "$ALL_VMS" == true ]]; then
         fi
     done
 else
-    # Check of VM bestaat
-    qm status "$VM_ID" &>/dev/null 2>&1 || log_error "$MSG_UPDATE_VM_NOT_FOUND"
+    # Check of VM of LXC bestaat
+    if ! qm status "$VM_ID" &>/dev/null 2>&1 && ! pct status "$VM_ID" &>/dev/null 2>&1; then
+        log_error "$MSG_UPDATE_VM_NOT_FOUND"
+    fi
 
     if [[ "$DRY_RUN" == true ]]; then
-        local_name=$(qm config "$VM_ID" 2>/dev/null | grep "^name:" | awk '{print $2}')
+        if qm status "$VM_ID" &>/dev/null 2>&1; then
+            local_name=$(qm config "$VM_ID" 2>/dev/null | grep "^name:" | awk '{print $2}')
+        else
+            local_name=$(pct config "$VM_ID" 2>/dev/null | grep "^hostname:" | awk '{print $2}')
+        fi
         log_info "Dry-run: [$VM_ID] $local_name ${MSG_UPDATE_DRY_WOULD}"
         exit 0
     fi

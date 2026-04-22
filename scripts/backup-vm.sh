@@ -85,11 +85,15 @@ detect_backup_storage() {
     echo "$storage"
 }
 
-# Backup een enkele VM
+# Backup een enkele VM of LXC
 backup_vm() {
     local vmid=$1 storage=$2 mode=$3
-    local name
-    name=$(qm config "$vmid" 2>/dev/null | grep "^name:" | awk '{print $2}')
+    local name=""
+    if qm status "$vmid" &>/dev/null 2>&1; then
+        name=$(qm config "$vmid" 2>/dev/null | grep "^name:" | awk '{print $2}')
+    elif pct status "$vmid" &>/dev/null 2>&1; then
+        name=$(pct config "$vmid" 2>/dev/null | grep "^hostname:" | awk '{print $2}')
+    fi
 
     log_info "$MSG_BACKUP_STARTING"
     if vzdump "$vmid" --storage "$storage" --mode "$mode" --compress zstd --notes-template "{{guestname}}" 2>&1; then
@@ -101,7 +105,7 @@ backup_vm() {
     fi
 }
 
-# Alle VM IDs ophalen (exclusief templates)
+# Alle VM + LXC IDs ophalen (exclusief templates)
 get_all_vms() {
     qm list 2>/dev/null | tail -n +2 | while read -r line; do
         local vmid
@@ -110,6 +114,9 @@ get_all_vms() {
         is_tpl=$(qm config "$vmid" 2>/dev/null | grep "^template:" | awk '{print $2}')
         [[ "$is_tpl" != "1" ]] && echo "$vmid"
     done
+    if command -v pct &>/dev/null; then
+        pct list 2>/dev/null | tail -n +2 | awk '{print $1}'
+    fi
 }
 
 # ── Argumenten verwerken ──────────────────────
@@ -175,8 +182,10 @@ if [[ "$ALL_VMS" == true ]]; then
         echo ""
     done < <(get_all_vms)
 else
-    # Check of VM bestaat
-    qm status "$VM_ID" &>/dev/null 2>&1 || log_error "$MSG_BACKUP_VM_NOT_FOUND"
+    # Check of VM of LXC bestaat
+    if ! qm status "$VM_ID" &>/dev/null 2>&1 && ! pct status "$VM_ID" &>/dev/null 2>&1; then
+        log_error "$MSG_BACKUP_VM_NOT_FOUND"
+    fi
     TOTAL=1
     if backup_vm "$VM_ID" "$BACKUP_STORAGE" "$BACKUP_MODE"; then
         SUCCESS=1

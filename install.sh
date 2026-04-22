@@ -64,6 +64,13 @@ mkdir -p "$INSTALL_DIR"
 cp "$SCRIPT_DIR/scripts/"*.sh "$INSTALL_DIR/"
 chmod +x "$INSTALL_DIR/"*.sh
 
+# LXC post-install scripts
+if [[ -d "$SCRIPT_DIR/scripts/lxc-post-install" ]]; then
+    mkdir -p "$INSTALL_DIR/lxc-post-install"
+    cp "$SCRIPT_DIR/scripts/lxc-post-install/"*.sh "$INSTALL_DIR/lxc-post-install/"
+    chmod +x "$INSTALL_DIR/lxc-post-install/"*.sh
+fi
+
 # Quick-create symlinks aanmaken
 ln -sf "$INSTALL_DIR/quick-create.sh" "$INSTALL_DIR/quick-docker.sh"
 ln -sf "$INSTALL_DIR/quick-create.sh" "$INSTALL_DIR/quick-webserver.sh"
@@ -111,6 +118,8 @@ echo "  create-template.sh --id 9001 --storage lvm  # $MSG_INSTALL_USAGE_TEMPLAT
 echo "  pve-menu                                    # $MSG_INSTALL_USAGE_MENU"
 echo "  pve-manager.sh                              # $MSG_INSTALL_USAGE_PVE_MANAGER"
 echo "  create-vm.sh docker-01 110 docker --start   # $MSG_INSTALL_USAGE_CLI"
+echo "  create-lxc.sh web-01 150 base --start       # LXC"
+echo "  create-lxc.sh docker-01 160 docker --start  # LXC Docker"
 echo "  create-vm.sh supa 200 supabase --start      # $MSG_INSTALL_USAGE_SUPABASE"
 echo "  quick-docker.sh mijn-app 130 --start        # $MSG_INSTALL_USAGE_QUICK_DOCKER"
 echo "  quick-supabase.sh supa-01 140 --start       # $MSG_INSTALL_USAGE_QUICK_SUPABASE"

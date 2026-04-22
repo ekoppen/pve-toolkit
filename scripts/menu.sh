@@ -78,8 +78,8 @@ input_vm_basics() {
         return 1
     fi
 
-    # Check of ID al in gebruik is
-    if qm status "$VM_ID" &>/dev/null 2>&1; then
+    # Check of ID al in gebruik is (VM of LXC)
+    if [[ -n "$(guest_type "$VM_ID")" ]]; then
         msg_info "$MSG_COMMON_ERROR" "$MSG_MENU_VM_ID_IN_USE"
         return 1
     fi
@@ -226,13 +226,19 @@ delete_vm_menu() {
     vmid=$(input_box "$MSG_MENU_DELETE_TITLE" "$MSG_MENU_DELETE_PROMPT" "") || return
     [[ -z "$vmid" ]] && return
 
-    if ! qm status "$vmid" &>/dev/null 2>&1; then
+    local kind
+    kind=$(guest_type "$vmid")
+    if [[ -z "$kind" ]]; then
         msg_info "$MSG_COMMON_ERROR" "$(_expand "$MSG_MENU_DELETE_VM_NOT_FOUND")"
         return
     fi
 
     local name
-    name=$(qm config "$vmid" 2>/dev/null | grep "^name:" | awk '{print $2}')
+    if [[ "$kind" == "vm" ]]; then
+        name=$(qm config "$vmid" 2>/dev/null | grep "^name:" | awk '{print $2}')
+    else
+        name=$(pct config "$vmid" 2>/dev/null | grep "^hostname:" | awk '{print $2}')
+    fi
 
     if confirm "$MSG_COMMON_CONFIRM" "$(_expand "$MSG_MENU_DELETE_CONFIRM")"; then
         clear
@@ -395,6 +401,130 @@ $MSG_MENU_CONFIRM_CONTINUE" 19 60 || return 1
     read -r
 }
 
+# ── LXC Aanmaak Flow ─────────────────────────
+create_lxc_flow() {
+    # Stap 1: Type
+    local menu_items=()
+    for key in "${LXC_TYPE_ORDER[@]}"; do
+        menu_items+=("$key" "${LXC_TYPE_LABELS[$key]} - ${LXC_TYPE_DESCRIPTIONS[$key]}")
+    done
+    local lxc_type
+    lxc_type=$(menu_select "$MSG_MENU_LXC_SELECT_TYPE_TITLE" "$MSG_MENU_LXC_SELECT_TYPE_PROMPT" 14 "${menu_items[@]}") || return
+
+    # Stap 2: Naam + ID
+    local ct_name ct_id suggested
+    ct_name=$(input_box "$MSG_MENU_LXC_NAME_TITLE" "$MSG_MENU_LXC_NAME_PROMPT" "${lxc_type}-lxc-01") || return
+    [[ -z "$ct_name" ]] && { msg_info "$MSG_COMMON_ERROR" "$MSG_MENU_VM_NAME_EMPTY"; return; }
+
+    suggested=$(next_vmid 200)
+    ct_id=$(input_box "$MSG_MENU_LXC_ID_TITLE" "$MSG_MENU_LXC_ID_PROMPT" "$suggested") || return
+    [[ -z "$ct_id" ]] && { msg_info "$MSG_COMMON_ERROR" "$MSG_MENU_VM_ID_EMPTY"; return; }
+
+    if ! [[ "$ct_id" =~ ^[0-9]+$ ]]; then
+        msg_info "$MSG_COMMON_ERROR" "$MSG_MENU_VM_ID_NOT_NUMBER"
+        return
+    fi
+    if [[ -n "$(guest_type "$ct_id")" ]]; then
+        msg_info "$MSG_COMMON_ERROR" "$MSG_MENU_VM_ID_IN_USE"
+        return
+    fi
+
+    # Stap 3: Modus
+    local mode
+    mode=$(menu_select "$MSG_MENU_MODE_TITLE" "$MSG_MENU_MODE_PROMPT" 12 \
+        "$MSG_MENU_MODE_STANDARD_KEY" "$MSG_MENU_MODE_STANDARD" \
+        "$MSG_MENU_MODE_ADVANCED_KEY" "$MSG_MENU_MODE_ADVANCED") || return
+
+    local cores memory disk vlan debian priv
+    cores="${LXC_TYPE_CORES[$lxc_type]}"
+    memory="${LXC_TYPE_MEMORY[$lxc_type]}"
+    disk="${LXC_TYPE_DISK[$lxc_type]}"
+    vlan=""
+    debian="12"
+    priv=false
+
+    if [[ "$mode" == "$MSG_MENU_MODE_ADVANCED_KEY" ]]; then
+        cores=$(input_box "$MSG_MENU_CORES_TITLE" "$MSG_MENU_CORES_PROMPT" "$cores") || return
+        memory=$(input_box "$MSG_MENU_MEMORY_TITLE" "$MSG_MENU_MEMORY_PROMPT" "$memory") || return
+        disk=$(input_box "$MSG_MENU_DISK_TITLE" "$MSG_MENU_DISK_PROMPT_WITH_DEFAULT" "$disk") || return
+        vlan=$(input_box "$MSG_MENU_VLAN_TITLE" "$MSG_MENU_VLAN_PROMPT" "") || return
+        debian=$(menu_select "$MSG_MENU_LXC_DEBIAN_TITLE" "$MSG_MENU_LXC_DEBIAN_PROMPT" 12 \
+            "12" "Debian 12 (Bookworm) - Stable" \
+            "13" "Debian 13 (Trixie)") || return
+        if confirm "$MSG_MENU_LXC_PRIV_TITLE" "$MSG_MENU_LXC_PRIV_PROMPT"; then
+            priv=true
+        fi
+    fi
+
+    # Auto-start + onboot
+    local start_flag="" onboot_flag=""
+    if confirm "$MSG_MENU_AUTOSTART_TITLE" "$MSG_MENU_AUTOSTART_PROMPT"; then
+        start_flag="--start"
+    else
+        if confirm "$MSG_MENU_ONBOOT_TITLE" "$MSG_MENU_ONBOOT_PROMPT"; then
+            onboot_flag="--onboot"
+        fi
+    fi
+
+    # Bevestiging
+    local vlan_info="$MSG_MENU_CONFIRM_VLAN_NONE"
+    [[ -n "$vlan" ]] && vlan_info="$vlan"
+    local priv_info="unprivileged"
+    [[ "$priv" == true ]] && priv_info="privileged"
+    local start_info="$MSG_COMMON_NO"
+    [[ -n "$start_flag" ]] && start_info="$MSG_COMMON_YES"
+
+    whiptail --backtitle "$BACKTITLE" --title "$MSG_MENU_CONFIRM_TITLE" --yesno \
+"$MSG_MENU_LXC_CONFIRM_TEXT
+
+  $MSG_COMMON_NAME_LABEL:       $ct_name
+  ID:         $ct_id
+  Type:       ${LXC_TYPE_LABELS[$lxc_type]}
+  Cores:      $cores
+  RAM:        ${memory}MB
+  Disk:       $disk
+  VLAN:       $vlan_info
+  Debian:     $debian
+  Mode:       $priv_info
+  Auto-start: $start_info
+
+$MSG_MENU_CONFIRM_CONTINUE" 21 60 || return
+
+    # Zoek create-lxc.sh
+    local lxc_script
+    if [[ -f "$SCRIPT_DIR/create-lxc.sh" ]]; then
+        lxc_script="$SCRIPT_DIR/create-lxc.sh"
+    elif [[ -f "/root/scripts/create-lxc.sh" ]]; then
+        lxc_script="/root/scripts/create-lxc.sh"
+    else
+        msg_info "$MSG_COMMON_ERROR" "$MSG_MENU_LXC_SCRIPT_NOT_FOUND"
+        return
+    fi
+
+    local cmd_args=("$ct_name" "$ct_id" "$lxc_type")
+    cmd_args+=(--cores "$cores" --memory "$memory" --disk "$disk" --version "$debian")
+    [[ -n "$vlan" ]] && cmd_args+=(--vlan "$vlan")
+    [[ "$priv" == true ]] && cmd_args+=(--privileged)
+    [[ -n "$onboot_flag" ]] && cmd_args+=("$onboot_flag")
+    [[ -n "$start_flag" ]] && cmd_args+=("$start_flag")
+
+    clear
+    show_banner
+    echo -e "${BLUE}$MSG_MENU_LXC_CREATING${NC}"
+    echo ""
+
+    bash "$lxc_script" "${cmd_args[@]}"
+    local exit_code=$?
+
+    echo ""
+    if [[ $exit_code -eq 0 ]]; then
+        echo -e "${GREEN}$MSG_COMMON_PRESS_ENTER${NC}"
+    else
+        echo -e "${RED}$MSG_MENU_ERROR_OCCURRED${NC}"
+    fi
+    read -r
+}
+
 # ── VM Aanmaak Flow ──────────────────────────
 create_vm_flow() {
     # Stap 1: Type selecteren
@@ -534,7 +664,7 @@ manage_users_menu() {
             [[ -z "$user" ]] && return
             cmd_args+=("--add-user" "$user")
 
-            if confirm "$MSG_MENU_USERS_SUDO_TITLE" "$MSG_MENU_USERS_SUDO_PROMPT"; then
+            if confirm "$MSG_MENU_USERS_SUDO_TITLE" "$(_expand "$MSG_MENU_USERS_SUDO_PROMPT")"; then
                 cmd_args+=("--sudo")
             fi
 
@@ -754,6 +884,7 @@ main_menu() {
         local choice
         choice=$(menu_select "$MSG_MENU_MAIN_TITLE" "$MSG_MENU_MAIN_PROMPT" 24 \
             "$MSG_MENU_MAIN_CREATE_KEY"       "$MSG_MENU_MAIN_CREATE" \
+            "$MSG_MENU_MAIN_CREATE_LXC_KEY"   "$MSG_MENU_MAIN_CREATE_LXC" \
             "$MSG_MENU_MAIN_TEMPLATE_KEY"     "$MSG_MENU_MAIN_TEMPLATE" \
             "$MSG_MENU_MAIN_LIST_KEY"         "$MSG_MENU_MAIN_LIST" \
             "$MSG_MENU_MAIN_DELETE_KEY"       "$MSG_MENU_MAIN_DELETE" \
@@ -766,6 +897,7 @@ main_menu() {
 
         case "$choice" in
             "$MSG_MENU_MAIN_CREATE_KEY")       create_vm_flow ;;
+            "$MSG_MENU_MAIN_CREATE_LXC_KEY")   create_lxc_flow ;;
             "$MSG_MENU_MAIN_TEMPLATE_KEY")     create_template_menu ;;
             "$MSG_MENU_MAIN_LIST_KEY")         show_vm_list ;;
             "$MSG_MENU_MAIN_DELETE_KEY")       delete_vm_menu ;;

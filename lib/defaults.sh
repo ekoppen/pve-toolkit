@@ -112,6 +112,62 @@ register_type "appwrite" \
     "Console: http://<IP>" \
     "http://<IP>"
 
+# ── LXC registry ─────────────────────────────
+declare -A LXC_TYPE_LABELS
+declare -A LXC_TYPE_DESCRIPTIONS
+declare -A LXC_TYPE_CORES
+declare -A LXC_TYPE_MEMORY
+declare -A LXC_TYPE_DISK
+declare -A LXC_TYPE_POSTINSTALL
+declare -A LXC_TYPE_FEATURES
+declare -A LXC_TYPE_POSTINFO
+declare -A LXC_TYPE_HEALTHCHECK
+LXC_TYPE_ORDER=()
+
+# register_lxc_type <key> <label> <desc> <cores> <memory> <disk> <postinstall> [features] [post-info] [healthcheck-url]
+#   features: comma-separated pct --features flags, e.g. "nesting=1,keyctl=1"
+#   postinstall: filename in scripts/lxc-post-install/ (empty = no post-install)
+register_lxc_type() {
+    local key="$1"
+    local label="$2"
+    local desc="$3"
+    local cores="$4"
+    local memory="$5"
+    local disk="$6"
+    local postinstall="${7:-}"
+    local features="${8:-}"
+    local postinfo="${9:-}"
+    local healthcheck="${10:-}"
+
+    LXC_TYPE_LABELS["$key"]="$label"
+    # shellcheck disable=SC2034
+    LXC_TYPE_DESCRIPTIONS["$key"]="$desc"
+    LXC_TYPE_CORES["$key"]="$cores"
+    LXC_TYPE_MEMORY["$key"]="$memory"
+    LXC_TYPE_DISK["$key"]="$disk"
+    LXC_TYPE_POSTINSTALL["$key"]="$postinstall"
+    LXC_TYPE_FEATURES["$key"]="$features"
+    LXC_TYPE_POSTINFO["$key"]="$postinfo"
+    LXC_TYPE_HEALTHCHECK["$key"]="$healthcheck"
+    LXC_TYPE_ORDER+=("$key")
+}
+
+register_lxc_type "base" \
+    "Base LXC" \
+    "${MSG_DEFAULTS_LXC_BASE_DESC:-Minimal Debian LXC container}" \
+    1 512 "4G" \
+    "" \
+    "" \
+    "" ""
+
+register_lxc_type "docker" \
+    "Docker LXC" \
+    "${MSG_DEFAULTS_LXC_DOCKER_DESC:-Debian LXC with Docker + Compose}" \
+    2 2048 "20G" \
+    "docker.sh" \
+    "nesting=1,keyctl=1" \
+    "" ""
+
 # ── Lookup functies ──────────────────────────
 
 # Retourneert snippet pad voor Proxmox
@@ -154,5 +210,24 @@ type_exists() {
 list_types() {
     for key in "${TYPE_ORDER[@]}"; do
         printf "%-12s %s\n" "$key" "${TYPE_LABELS[$key]}"
+    done
+}
+
+# ── LXC helpers ──────────────────────────────
+lxc_type_exists() {
+    [[ -n "${LXC_TYPE_LABELS[$1]}" ]]
+}
+
+apply_lxc_defaults_for_type() {
+    local type="$1"
+    [[ -z "${LXC_TYPE_CORES[$type]}" ]] && return 1
+    CORES="${CORES:-${LXC_TYPE_CORES[$type]}}"
+    MEMORY="${MEMORY:-${LXC_TYPE_MEMORY[$type]}}"
+    DISK_SIZE="${DISK_SIZE:-${LXC_TYPE_DISK[$type]}}"
+}
+
+list_lxc_types() {
+    for key in "${LXC_TYPE_ORDER[@]}"; do
+        printf "%-12s %s\n" "$key" "${LXC_TYPE_LABELS[$key]}"
     done
 }

@@ -88,14 +88,26 @@ radio_select() {
 
 # ── Hulpfuncties ──────────────────────────────
 
-# Volgende beschikbare VM ID
+# Volgende beschikbare VM/LXC ID (beide namespaces delen dezelfde IDs)
 next_vmid() {
     local start=${1:-100}
     local vmid=$start
-    while qm status "$vmid" &>/dev/null 2>&1; do
+    while qm status "$vmid" &>/dev/null 2>&1 || pct status "$vmid" &>/dev/null 2>&1; do
         vmid=$((vmid + 1))
     done
     echo "$vmid"
+}
+
+# Detecteer type (vm|lxc|"") voor een gegeven ID
+guest_type() {
+    local id="$1"
+    if qm status "$id" &>/dev/null 2>&1; then
+        echo "vm"
+    elif pct status "$id" &>/dev/null 2>&1; then
+        echo "lxc"
+    else
+        echo ""
+    fi
 }
 
 # ── Validatie ────────────────────────────────

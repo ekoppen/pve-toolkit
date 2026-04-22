@@ -46,24 +46,42 @@ VM_ID=$1
 FORCE=false
 [[ "$2" == "--force" ]] && FORCE=true
 
-# Check of VM bestaat
-qm status "$VM_ID" &>/dev/null 2>&1 || { echo -e "${RED}${MSG_DELETE_VM_NOT_FOUND}${NC}"; exit 1; }
-
-# Haal info op
-NAME=$(qm config "$VM_ID" 2>/dev/null | grep "^name:" | awk '{print $2}')
-STATUS=$(qm status "$VM_ID" 2>/dev/null | awk '{print $2}')
-IS_TEMPLATE=$(qm config "$VM_ID" 2>/dev/null | grep "^template:" | awk '{print $2}')
-
-# Bescherming tegen per-ongeluk template verwijderen
-if [[ "$IS_TEMPLATE" == "1" ]]; then
-    echo -e "${RED}${MSG_DELETE_VM_IS_TEMPLATE_WARN}${NC}"
-    echo -e "${RED}${MSG_DELETE_VM_IS_TEMPLATE_MSG}${NC}"
-    echo -e "${RED}${MSG_DELETE_VM_IS_TEMPLATE_HINT}${NC}"
+# Detecteer type (VM of LXC)
+if qm status "$VM_ID" &>/dev/null 2>&1; then
+    KIND="vm"
+    CFG_CMD="qm config"
+    STATUS_CMD="qm status"
+    STOP_CMD="qm stop"
+    DESTROY_CMD="qm destroy"
+    NAME=$(qm config "$VM_ID" 2>/dev/null | grep "^name:" | awk '{print $2}')
+elif pct status "$VM_ID" &>/dev/null 2>&1; then
+    KIND="lxc"
+    CFG_CMD="pct config"
+    STATUS_CMD="pct status"
+    STOP_CMD="pct stop"
+    DESTROY_CMD="pct destroy"
+    NAME=$(pct config "$VM_ID" 2>/dev/null | grep "^hostname:" | awk '{print $2}')
+else
+    echo -e "${RED}${MSG_DELETE_VM_NOT_FOUND}${NC}"
     exit 1
+fi
+
+STATUS=$($STATUS_CMD "$VM_ID" 2>/dev/null | awk '{print $2}')
+
+# Bescherming tegen per-ongeluk template verwijderen (alleen VMs kunnen templates zijn)
+if [[ "$KIND" == "vm" ]]; then
+    IS_TEMPLATE=$($CFG_CMD "$VM_ID" 2>/dev/null | grep "^template:" | awk '{print $2}')
+    if [[ "$IS_TEMPLATE" == "1" ]]; then
+        echo -e "${RED}${MSG_DELETE_VM_IS_TEMPLATE_WARN}${NC}"
+        echo -e "${RED}${MSG_DELETE_VM_IS_TEMPLATE_MSG}${NC}"
+        echo -e "${RED}${MSG_DELETE_VM_IS_TEMPLATE_HINT}${NC}"
+        exit 1
+    fi
 fi
 
 echo ""
 echo -e "${YELLOW}${MSG_DELETE_VM_HEADER}${NC}"
+echo -e "  Kind:   ${KIND^^}"
 echo -e "  ID:     $VM_ID"
 echo -e "  $MSG_COMMON_NAME_LABEL:   $NAME"
 echo -e "  Status: $STATUS"
@@ -74,19 +92,21 @@ if [[ "$FORCE" != true ]]; then
     [[ "$CONFIRM" != "$MSG_DELETE_VM_CONFIRM_NO" ]] && { echo "$MSG_COMMON_CANCELLED"; exit 0; }
 fi
 
-# Stop VM als die draait
+# Stop als die draait
 if [[ "$STATUS" == "running" ]]; then
     echo -e "${BLUE}[INFO]${NC} $MSG_DELETE_VM_STOPPING"
-    qm stop "$VM_ID"
+    $STOP_CMD "$VM_ID"
     sleep 3
 fi
 
-# Verwijder VM
+# Verwijder
 echo -e "${BLUE}[INFO]${NC} $MSG_DELETE_VM_DELETING"
-qm destroy "$VM_ID" --purge
+$DESTROY_CMD "$VM_ID" --purge
 
-# Per-VM meta-data snippet opruimen (indien aanwezig)
-rm -f "/var/lib/vz/snippets/vm${VM_ID}-meta.yaml"
+# Per-VM meta-data snippet opruimen (alleen voor VMs)
+if [[ "$KIND" == "vm" ]]; then
+    rm -f "/var/lib/vz/snippets/vm${VM_ID}-meta.yaml"
+fi
 
 echo -e "${GREEN}[OK]${NC}   $MSG_DELETE_VM_DELETED"
 echo ""

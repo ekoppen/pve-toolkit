@@ -40,9 +40,10 @@ echo -e "${BLUE}  ${MSG_LIST_VMS_TITLE}${NC}"
 echo -e "${BLUE}════════════════════════════════════════════════════════════════${NC}"
 echo ""
 
-printf "%-8s %-25s %-10s %-6s %-8s %-16s\n" "$MSG_LIST_VMS_VMID" "$MSG_LIST_VMS_NAME" "$MSG_LIST_VMS_STATUS" "$MSG_LIST_VMS_CORES" "$MSG_LIST_VMS_RAM" "$MSG_LIST_VMS_IP"
-printf "%-8s %-25s %-10s %-6s %-8s %-16s\n" "────" "────" "──────" "─────" "───" "──"
+printf "%-6s %-8s %-25s %-10s %-6s %-8s %-16s\n" "KIND" "$MSG_LIST_VMS_VMID" "$MSG_LIST_VMS_NAME" "$MSG_LIST_VMS_STATUS" "$MSG_LIST_VMS_CORES" "$MSG_LIST_VMS_RAM" "$MSG_LIST_VMS_IP"
+printf "%-6s %-8s %-25s %-10s %-6s %-8s %-16s\n" "────" "────" "────" "──────" "─────" "───" "──"
 
+# VMs via qm
 for vmid in $(qm list 2>/dev/null | tail -n +2 | awk '{print $1}'); do
     NAME=$(qm config "$vmid" 2>/dev/null | grep "^name:" | awk '{print $2}')
     STATUS=$(qm status "$vmid" 2>/dev/null | awk '{print $2}')
@@ -50,7 +51,6 @@ for vmid in $(qm list 2>/dev/null | tail -n +2 | awk '{print $1}'); do
     MEMORY=$(qm config "$vmid" 2>/dev/null | grep "^memory:" | awk '{print $2}')
     IP="-"
 
-    # Probeer IP op te halen als VM draait
     if [[ "$STATUS" == "running" ]]; then
         IP=$(qm guest cmd "$vmid" network-get-interfaces 2>/dev/null | \
              sed -n 's/.*"ip-address"\s*:\s*"\([0-9]\+\.[0-9]\+\.[0-9]\+\.[0-9]\+\)".*/\1/p' | \
@@ -61,12 +61,33 @@ for vmid in $(qm list 2>/dev/null | tail -n +2 | awk '{print $1}'); do
         STATUS_COLOR=$RED
     fi
 
-    # Template markering
     IS_TEMPLATE=$(qm config "$vmid" 2>/dev/null | grep "^template:" | awk '{print $2}')
     [[ "$IS_TEMPLATE" == "1" ]] && NAME="${NAME} ${YELLOW}[T]${NC}"
 
-    printf "%-8s %-25b %-10b %-6s %-8s %-16s\n" \
-        "$vmid" "$NAME" "${STATUS_COLOR}${STATUS}${NC}" "${CORES:-?}" "${MEMORY:-?}MB" "${IP:-—}"
+    printf "%-6s %-8s %-25b %-10b %-6s %-8s %-16s\n" \
+        "VM" "$vmid" "$NAME" "${STATUS_COLOR}${STATUS}${NC}" "${CORES:-?}" "${MEMORY:-?}MB" "${IP:-—}"
 done
+
+# LXCs via pct
+if command -v pct &>/dev/null; then
+    for ctid in $(pct list 2>/dev/null | tail -n +2 | awk '{print $1}'); do
+        NAME=$(pct config "$ctid" 2>/dev/null | grep "^hostname:" | awk '{print $2}')
+        STATUS=$(pct status "$ctid" 2>/dev/null | awk '{print $2}')
+        CORES=$(pct config "$ctid" 2>/dev/null | grep "^cores:" | awk '{print $2}')
+        MEMORY=$(pct config "$ctid" 2>/dev/null | grep "^memory:" | awk '{print $2}')
+        IP="-"
+
+        if [[ "$STATUS" == "running" ]]; then
+            IP=$(pct exec "$ctid" -- hostname -I 2>/dev/null | awk '{print $1}')
+            [[ -z "$IP" ]] && IP="$MSG_LIST_VMS_WAITING"
+            STATUS_COLOR=$GREEN
+        else
+            STATUS_COLOR=$RED
+        fi
+
+        printf "%-6s %-8s %-25b %-10b %-6s %-8s %-16s\n" \
+            "LXC" "$ctid" "$NAME" "${STATUS_COLOR}${STATUS}${NC}" "${CORES:-?}" "${MEMORY:-?}MB" "${IP:-—}"
+    done
+fi
 
 echo ""
