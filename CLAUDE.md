@@ -36,8 +36,30 @@ Proxmox VM automation toolkit. Creates cloud-init based VMs from templates on Pr
 - **Type registry:** New VM types go in `defaults.sh` via `register_type()` + a matching snippet YAML.
 - **UI:** Interactive menus use whiptail via helpers in `common.sh` (`menu_select`, `radio_select`, `confirm`, `input_box`).
 - **Scripts run on Proxmox as root.** Installed to `/root/scripts/`, libs to `/root/lib/`, snippets to `/var/lib/vz/snippets/`.
-- **App installers:** New installable apps go in `lib/apps.sh` via `register_app()` + `APP_GEN`/`APP_PROMPT`, with an optional `scripts/apps/<key>.hook.sh`. The engine (`scripts/install-app.sh`) clones on the host via its GitHub SSH key, pushes into the LXC, renders `.env` inside the container, and runs `docker compose up`.
-- **No external dependencies** beyond what Proxmox provides (qm, wget, whiptail, etc).
+- **App installers:** New installable apps go in `lib/apps.sh` via `register_app()` + `APP_GEN`/`APP_PROMPT`, with an optional `scripts/apps/<key>.hook.sh` (hook args: `<app-key> <ctid> <ip> <target>`). The engine (`scripts/install-app.sh`) clones on the host via its GitHub SSH key, pushes into the container, renders `.env` inside it, and runs `docker compose up`.
+- **No external dependencies** beyond what Proxmox provides (qm, wget, whiptail, etc) — except the Incus target below, which only needs `incus`.
+
+## Incus target (non-Proxmox Docker hosts)
+
+`install-app.sh --incus` targets the local Incus daemon instead of a Proxmox
+LXC — for Docker hosts without Proxmox (currently: `debdesk`). It reuses the
+entire app registry (`lib/apps.sh`), `_render-env.sh`, and hooks unchanged;
+only the container layer differs:
+
+- `scripts/create-incus.sh` mirrors `create-lxc.sh`'s CLI (same `lib/defaults.sh`
+  LXC-type registry: cores/memory/disk/postinstall), but uses `incus init`/
+  `incus launch` instead of `pct create`. Containers are named, not numbered —
+  `<ctid>` == `<name>` for this target.
+- `install-app.sh` dispatches every guest interaction through three small
+  wrappers (`guest_exec`, `guest_push`, `guest_is_running`) that pick
+  `pct exec`/`pct push`/`pct status` or `incus exec`/`incus file push`/
+  `incus list` based on `$TARGET`.
+- Runs against the **local** Incus daemon only — no remote-host support yet
+  (there's currently only one Incus host in use; add it if/when a second
+  appears).
+- Known gaps: `incusbr0` is NAT-only (no LAN IP without extra bridge/proxy
+  config), and the `default` (dir) storage pool has no disk-quota support
+  (`--disk` is accepted but not enforced).
 
 ## Development notes
 

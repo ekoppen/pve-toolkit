@@ -1,16 +1,23 @@
 #!/bin/bash
 # ============================================
 # INSTALL-APP.SH
-# Install a doorkoppen app (Docker Compose stack) into a fresh or existing LXC.
+# Install a doorkoppen app (Docker Compose stack) into a fresh or existing LXC
+# (Proxmox) or Incus container (non-Proxmox Docker hosts, e.g. debdesk).
 #
 # Usage:
 #   install-app.sh <appkey> --create [--name H] [--cores N] [--memory N] [--disk NG] [--vlan N]
 #   install-app.sh <appkey> --ctid <N>
 #   install-app.sh <appkey> --check            # validate + print config, no side effects
 #   install-app.sh <appkey> ... --set VAR=VALUE [--set VAR=VALUE ...]
+#   install-app.sh <appkey> --incus --create   # target Incus instead of Proxmox LXC
 #
-# Auth: clones on the Proxmox host using the host's GitHub-authorized SSH key,
-# then tar-pushes the tree into the LXC. The container never needs GitHub access.
+# Auth: clones on the host (Proxmox or Incus) using the host's GitHub-authorized
+# SSH key, then tar-pushes the tree into the container. The container never
+# needs GitHub access.
+#
+# --incus runs against the local Incus daemon (same box you run this script
+# on — e.g. debdesk itself), not a remote target. There is currently only one
+# Incus host in use; add remote-host support here if/when a second appears.
 # ============================================
 set -euo pipefail
 
@@ -41,6 +48,7 @@ CTID=""
 CT_NAME="$APP"
 CORES="${APP_CORES[$APP]}"; MEMORY="${APP_MEMORY[$APP]}"; DISK="${APP_DISK[$APP]}"
 VLAN=""
+TARGET="proxmox"   # proxmox (pct) | incus
 declare -a SETS=()
 
 while [[ $# -gt 0 ]]; do
@@ -53,15 +61,37 @@ while [[ $# -gt 0 ]]; do
         --memory)  MEMORY="$2"; shift 2 ;;
         --disk)    DISK="$2"; shift 2 ;;
         --vlan)    VLAN="$2"; shift 2 ;;
+        --incus)   TARGET="incus"; shift ;;
         --set)     SETS+=("$2"); shift 2 ;;
         *)         log_error "$MSG_INSTALL_APP_BAD_ARG" ;;
     esac
 done
 [[ -n "$MODE" ]] || log_error "$MSG_INSTALL_APP_NO_MODE"
 
+# ── Target dispatch: pct (Proxmox LXC) or incus ──────────
+guest_exec() {
+    local ctid="$1"; shift
+    if [[ "$TARGET" == "incus" ]]; then incus exec "$ctid" -- "$@"
+    else pct exec "$ctid" -- "$@"; fi
+}
+guest_push() {
+    local ctid="$1" local_path="$2" remote_path="$3"
+    if [[ "$TARGET" == "incus" ]]; then incus file push "$local_path" "$ctid$remote_path"
+    else pct push "$ctid" "$local_path" "$remote_path"; fi
+}
+guest_is_running() {
+    local ctid="$1"
+    if [[ "$TARGET" == "incus" ]]; then
+        [[ "$(incus list "$ctid" --format csv -c s 2>/dev/null)" == "RUNNING" ]]
+    else
+        pct status "$ctid" 2>/dev/null | grep -q running
+    fi
+}
+
 # ── --check: print resolved config, no side effects ──
 if [[ "$MODE" == "check" ]]; then
     echo "app:        $APP (${APP_LABELS[$APP]})"
+    echo "target:     $TARGET"
     echo "repo:       ${APP_REPO[$APP]}"
     echo "compose:    ${APP_COMPOSE[$APP]}"
     echo "port:       ${APP_PORT[$APP]}"
@@ -87,32 +117,45 @@ preflight_ssh() {
     log_success "$MSG_INSTALL_APP_SSH_OK"
 }
 
-# ── Resolve target LXC ───────────────────────
+# ── Resolve target LXC/Incus container ───────
 resolve_target() {
     if [[ "$MODE" == "create" ]]; then
-        local id; id="$(next_vmid 200)"
-        local create_script=""
-        for c in "$SCRIPT_DIR/create-lxc.sh" "/root/scripts/create-lxc.sh"; do
-            [[ -f "$c" ]] && { create_script="$c"; break; }
-        done
-        [[ -n "$create_script" ]] || log_error "$MSG_INSTALL_APP_NO_CREATE_LXC"
+        local id create_script=""
+        if [[ "$TARGET" == "incus" ]]; then
+            id="$CT_NAME"  # Incus containers are named, not numbered
+            for c in "$SCRIPT_DIR/create-incus.sh" "/root/scripts/create-incus.sh"; do
+                [[ -f "$c" ]] && { create_script="$c"; break; }
+            done
+            [[ -n "$create_script" ]] || log_error "$MSG_INSTALL_APP_NO_CREATE_INCUS"
+        else
+            id="$(next_vmid 200)"
+            for c in "$SCRIPT_DIR/create-lxc.sh" "/root/scripts/create-lxc.sh"; do
+                [[ -f "$c" ]] && { create_script="$c"; break; }
+            done
+            [[ -n "$create_script" ]] || log_error "$MSG_INSTALL_APP_NO_CREATE_LXC"
+        fi
         local args=("$CT_NAME" "$id" "docker" --cores "$CORES" --memory "$MEMORY" --disk "$DISK" --start)
         [[ "${APP_FUSE[$APP]}" == "true" ]] && args+=(--fuse)
         [[ -n "$VLAN" ]] && args+=(--vlan "$VLAN")
-        log_info "$MSG_INSTALL_APP_CREATING_LXC"
+        if [[ "$TARGET" == "incus" ]]; then log_info "$MSG_INSTALL_APP_CREATING_INCUS"
+        else log_info "$MSG_INSTALL_APP_CREATING_LXC"; fi
         bash "$create_script" "${args[@]}"
         CTID="$id"
     else
-        [[ "$(guest_type "$CTID")" == "lxc" ]] || log_error "$MSG_INSTALL_APP_CTID_NOT_LXC"
-        pct status "$CTID" 2>/dev/null | grep -q running || log_error "$MSG_INSTALL_APP_CTID_NOT_RUNNING"
+        if [[ "$TARGET" == "incus" ]]; then
+            incus info "$CTID" &>/dev/null || log_error "$MSG_INSTALL_APP_CTID_NOT_INCUS"
+        else
+            [[ "$(guest_type "$CTID")" == "lxc" ]] || log_error "$MSG_INSTALL_APP_CTID_NOT_LXC"
+        fi
+        guest_is_running "$CTID" || log_error "$MSG_INSTALL_APP_CTID_NOT_RUNNING"
     fi
     # Detect IP
-    CT_IP="$(pct exec "$CTID" -- hostname -I 2>/dev/null | awk '{print $1}' || true)"
+    CT_IP="$(guest_exec "$CTID" hostname -I 2>/dev/null | awk '{print $1}' || true)"
 }
 
 # ── Ensure Docker in the container ───────────
 ensure_docker() {
-    if pct exec "$CTID" -- sh -c 'command -v docker >/dev/null 2>&1'; then
+    if guest_exec "$CTID" sh -c 'command -v docker >/dev/null 2>&1'; then
         return
     fi
     log_info "$MSG_INSTALL_APP_DOCKER_INSTALL"
@@ -121,7 +164,7 @@ ensure_docker() {
         [[ -f "$c" ]] && { docker_post="$c"; break; }
     done
     [[ -n "$docker_post" ]] || log_error "$MSG_INSTALL_APP_NO_DOCKER_POST"
-    pct exec "$CTID" -- bash -s < "$docker_post" || log_error "$MSG_INSTALL_APP_DOCKER_FAILED"
+    guest_exec "$CTID" bash -s < "$docker_post" || log_error "$MSG_INSTALL_APP_DOCKER_FAILED"
 }
 
 # ── Clone on host + tar-push into LXC ────────
@@ -137,15 +180,15 @@ fetch_and_push() {
         git clone --depth 1 "${APP_REPO[$APP]}" "$cache"
     fi
     log_info "$MSG_INSTALL_APP_PUSHING"
-    pct exec "$CTID" -- mkdir -p "$REMOTE_DIR"
+    guest_exec "$CTID" mkdir -p "$REMOTE_DIR"
     # NO --delete semantics: tar only adds/overwrites tracked files. .env is
     # gitignored so it is never in the clone and never overwritten.
-    tar -C "$cache" --exclude='.git' -cf - . | pct exec "$CTID" -- tar -C "$REMOTE_DIR" -xf -
+    tar -C "$cache" --exclude='.git' -cf - . | guest_exec "$CTID" tar -C "$REMOTE_DIR" -xf -
 }
 
 # ── Render .env inside the LXC (first install only) ──
 render_env() {
-    if pct exec "$CTID" -- test -f "$REMOTE_DIR/.env"; then
+    if guest_exec "$CTID" test -f "$REMOTE_DIR/.env"; then
         log_warn "$MSG_INSTALL_APP_ENV_EXISTS"
         return
     fi
@@ -157,27 +200,27 @@ render_env() {
     local s
     for s in "${SETS[@]}"; do printf '%s\n' "$s" >> "$answf"; done
 
-    pct push "$CTID" "$APPS_DIR/_render-env.sh" "$REMOTE_DIR/_render-env.sh"
-    pct push "$CTID" "$genf" "$REMOTE_DIR/.gen.spec"
-    pct push "$CTID" "$answf" "$REMOTE_DIR/.answers"
+    guest_push "$CTID" "$APPS_DIR/_render-env.sh" "$REMOTE_DIR/_render-env.sh"
+    guest_push "$CTID" "$genf" "$REMOTE_DIR/.gen.spec"
+    guest_push "$CTID" "$answf" "$REMOTE_DIR/.answers"
     rm -f "$genf" "$answf"
 
     log_info "$MSG_INSTALL_APP_RENDERING"
-    pct exec "$CTID" -- bash "$REMOTE_DIR/_render-env.sh" \
+    guest_exec "$CTID" bash "$REMOTE_DIR/_render-env.sh" \
         "$REMOTE_DIR/.env.example" "$REMOTE_DIR/.gen.spec" "$REMOTE_DIR/.answers" "$REMOTE_DIR/.env"
-    pct exec "$CTID" -- rm -f "$REMOTE_DIR/.gen.spec" "$REMOTE_DIR/.answers" "$REMOTE_DIR/_render-env.sh"
+    guest_exec "$CTID" rm -f "$REMOTE_DIR/.gen.spec" "$REMOTE_DIR/.answers" "$REMOTE_DIR/_render-env.sh"
 }
 
 # ── docker compose up ────────────────────────
 compose_up() {
     log_info "$MSG_INSTALL_APP_STARTING"
-    pct exec "$CTID" -- bash -lc "cd $REMOTE_DIR && docker compose -f $COMPOSE --env-file .env up -d --build"
+    guest_exec "$CTID" bash -lc "cd $REMOTE_DIR && docker compose -f $COMPOSE --env-file .env up -d --build"
 }
 
 # ── Run hook + summary ───────────────────────
 finish() {
     local hook="$APPS_DIR/$APP.hook.sh"
-    [[ -f "$hook" ]] && bash "$hook" "$APP" "$CTID" "${CT_IP:-<IP>}"
+    [[ -f "$hook" ]] && bash "$hook" "$APP" "$CTID" "${CT_IP:-<IP>}" "$TARGET"
 
     local info="${APP_POSTINFO[$APP]//<IP>/${CT_IP:-<IP>}}"
     echo ""

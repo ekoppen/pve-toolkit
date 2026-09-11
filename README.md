@@ -200,6 +200,26 @@ CLI equivalent:
 Re-running against an existing container updates the app (git pull + rebuild)
 and never overwrites the existing `.env` or data volumes.
 
+### Non-Proxmox Docker hosts (Incus)
+
+Add `--incus` to target the local Incus daemon instead of a Proxmox LXC — for
+Docker hosts that don't run Proxmox (e.g. `debdesk`). Same app registry, same
+`.env` rendering, same hooks; only the container layer differs (`incus exec`/
+`incus file push` instead of `pct exec`/`pct push`, and `create-incus.sh`
+instead of `create-lxc.sh`). Run it on the Incus host itself — there's no
+remote-host targeting yet, just the local `incus` daemon.
+
+    install-app.sh retrohead --incus --create
+    install-app.sh retrohead --incus --ctid my-container
+    install-app.sh retrohead --incus --check
+
+Two things Incus doesn't do (yet) the way Proxmox does:
+- **No LAN IP by default** — the `incusbr0` bridge is NAT-only, so a fresh
+  container isn't reachable from the rest of the network until you add a
+  bridged network or port-forward.
+- **No disk quota** on the `default` (dir) storage pool — `--disk` is
+  accepted but not enforced; add a zfs/btrfs pool if you need real quotas.
+
 Add a new app by editing `lib/apps.sh` (`register_app` + `APP_GEN`/`APP_PROMPT`)
 and optionally adding `scripts/apps/<key>.hook.sh`.
 
@@ -226,6 +246,9 @@ pve-toolkit/
     ├── create-template.sh          #   Automatic Debian template creation
     ├── create-vm.sh                #   Create VM from template
     ├── create-haos-vm.sh           #   Home Assistant OS VM (UEFI appliance)
+    ├── create-lxc.sh               #   Create Proxmox LXC from template
+    ├── create-incus.sh             #   Create Incus container (non-Proxmox Docker hosts)
+    ├── install-app.sh              #   Install an app into an LXC or Incus container
     ├── menu.sh                     #   Interactive whiptail menu (pve-menu)
     ├── quick-create.sh             #   Shortcuts via symlinks
     ├── list-vms.sh                 #   VM overview
