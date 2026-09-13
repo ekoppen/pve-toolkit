@@ -60,6 +60,7 @@ usage() {
     echo "$MSG_CREATE_LXC_OPT_VERSION"
     echo "$MSG_CREATE_LXC_OPT_FUSE"
     echo "$MSG_CREATE_LXC_OPT_START"
+    echo "$MSG_CREATE_INCUS_OPT_LAN"
     echo ""
     echo "$MSG_CREATE_LXC_EXAMPLES"
     echo "  $0 docker-01 docker-01 docker --cores 4 --memory 4096 --start"
@@ -85,9 +86,11 @@ DISK_SIZE=""
 DEBIAN_VERSION="$DEFAULT_DEBIAN_VERSION"
 WANT_FUSE=false
 START_AFTER=false
+WANT_LAN=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
+        --lan)        WANT_LAN=true; shift ;;
         --cores)      CORES=$2; shift 2 ;;
         --memory)     MEMORY=$2; shift 2 ;;
         --disk)       DISK_SIZE=$2; shift 2 ;;
@@ -110,6 +113,10 @@ command -v incus &>/dev/null || log_error "$MSG_CREATE_INCUS_NOT_FOUND"
 
 if incus info "$CT_NAME" &>/dev/null; then
     log_error "$MSG_CREATE_LXC_ID_EXISTS"
+fi
+
+if [[ "$WANT_LAN" == true ]]; then
+    incus network show macvlan0 &>/dev/null || log_error "$MSG_CREATE_INCUS_NO_MACVLAN"
 fi
 
 if [[ "$DEBIAN_VERSION" != "12" && "$DEBIAN_VERSION" != "13" ]]; then
@@ -159,11 +166,15 @@ echo ""
 
 # ── incus init/launch ─────────────────────────
 log_info "$MSG_CREATE_INCUS_STEP_CREATE"
+[[ "$WANT_LAN" == true ]] && log_info "Network:  macvlan0 (echt LAN-IP)"
+
+NET_ARGS=()
+[[ "$WANT_LAN" == true ]] && NET_ARGS=(--network macvlan0)
 
 if [[ "$START_AFTER" == true ]]; then
-    incus launch "images:debian/${DEBIAN_VERSION}" "$CT_NAME" || log_error "$MSG_CREATE_LXC_CREATE_FAILED"
+    incus launch "images:debian/${DEBIAN_VERSION}" "$CT_NAME" "${NET_ARGS[@]}" || log_error "$MSG_CREATE_LXC_CREATE_FAILED"
 else
-    incus init "images:debian/${DEBIAN_VERSION}" "$CT_NAME" || log_error "$MSG_CREATE_LXC_CREATE_FAILED"
+    incus init "images:debian/${DEBIAN_VERSION}" "$CT_NAME" "${NET_ARGS[@]}" || log_error "$MSG_CREATE_LXC_CREATE_FAILED"
 fi
 
 incus config set "$CT_NAME" limits.cpu "$CORES"
@@ -232,7 +243,11 @@ echo -e "  Type:     $CT_TYPE (Incus)"
 echo -e "  Cores:    $CORES"
 echo -e "  RAM:      ${MEMORY}MB"
 if [[ -n "$IP" ]]; then
-    echo -e "  IP:       ${GREEN}$IP${NC}  ${YELLOW}(NAT — niet vanaf het LAN bereikbaar zonder extra config)${NC}"
+    if [[ "$WANT_LAN" == true ]]; then
+        echo -e "  IP:       ${GREEN}$IP${NC}  (macvlan — gewoon LAN-adres)"
+    else
+        echo -e "  IP:       ${GREEN}$IP${NC}  ${YELLOW}(NAT — niet vanaf het LAN bereikbaar zonder extra config)${NC}"
+    fi
     echo ""
     echo -e "  Console:  ${YELLOW}incus exec $CT_NAME -- bash${NC}"
 fi

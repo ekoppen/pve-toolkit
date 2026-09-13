@@ -57,9 +57,17 @@ only the container layer differs:
 - Runs against the **local** Incus daemon only — no remote-host support yet
   (there's currently only one Incus host in use; add it if/when a second
   appears).
-- Known gaps: `incusbr0` is NAT-only (no LAN IP without extra bridge/proxy
-  config), and the `default` (dir) storage pool has no disk-quota support
+- Known gaps: the `default` (dir) storage pool has no disk-quota support
   (`--disk` is accepted but not enforced).
+- `incusbr0` is NAT-only by default; `--lan` on `install-app.sh`/
+  `create-incus.sh` attaches via a `macvlan0` network instead (real LAN IP,
+  one-time setup: `incus network create macvlan0 --type=macvlan
+  parent=<nic>`). Deliberately NOT a Proxmox-style host bridge: a live bridge
+  migration attempt on debdesk (2026-09-12) broke remote connectivity for
+  ~20h and needed physical console access to recover. Macvlan never touches
+  the host's own network config, so it can't repeat that failure mode.
+  Trade-off: the Incus host itself can't reach macvlan-attached containers
+  over the network (`incus exec` still works).
 
 ## Development notes
 

@@ -49,6 +49,7 @@ CT_NAME="$APP"
 CORES="${APP_CORES[$APP]}"; MEMORY="${APP_MEMORY[$APP]}"; DISK="${APP_DISK[$APP]}"
 VLAN=""
 TARGET="proxmox"   # proxmox (pct) | incus
+WANT_LAN=false      # incus target only: attach via macvlan0 instead of NAT
 declare -a SETS=()
 
 while [[ $# -gt 0 ]]; do
@@ -62,6 +63,7 @@ while [[ $# -gt 0 ]]; do
         --disk)    DISK="$2"; shift 2 ;;
         --vlan)    VLAN="$2"; shift 2 ;;
         --incus)   TARGET="incus"; shift ;;
+        --lan)     WANT_LAN=true; shift ;;
         --set)     SETS+=("$2"); shift 2 ;;
         *)         log_error "$MSG_INSTALL_APP_BAD_ARG" ;;
     esac
@@ -137,6 +139,7 @@ resolve_target() {
         local args=("$CT_NAME" "$id" "docker" --cores "$CORES" --memory "$MEMORY" --disk "$DISK" --start)
         [[ "${APP_FUSE[$APP]}" == "true" ]] && args+=(--fuse)
         [[ -n "$VLAN" ]] && args+=(--vlan "$VLAN")
+        [[ "$TARGET" == "incus" && "$WANT_LAN" == true ]] && args+=(--lan)
         if [[ "$TARGET" == "incus" ]]; then log_info "$MSG_INSTALL_APP_CREATING_INCUS"
         else log_info "$MSG_INSTALL_APP_CREATING_LXC"; fi
         bash "$create_script" "${args[@]}"
@@ -150,7 +153,12 @@ resolve_target() {
         guest_is_running "$CTID" || log_error "$MSG_INSTALL_APP_CTID_NOT_RUNNING"
     fi
     # Detect IP
-    CT_IP="$(guest_exec "$CTID" hostname -I 2>/dev/null | awk '{print $1}' || true)"
+    # Route-based lookup instead of "hostname -I | awk '{print $1}'": once Docker
+    # is installed, its internal bridges (docker0, br-*) can list ahead of the
+    # real interface, so the naive first-IP pick grabs a 172.17/18.x address
+    # that's unreachable from outside the container.
+    CT_IP="$(guest_exec "$CTID" sh -c "ip -4 route get 1.1.1.1 2>/dev/null | grep -oE 'src [0-9.]+' | cut -d' ' -f2" || true)"
+    [[ -z "$CT_IP" ]] && CT_IP="$(guest_exec "$CTID" hostname -I 2>/dev/null | awk '{print $1}' || true)"
 }
 
 # ── Ensure Docker in the container ───────────
