@@ -84,6 +84,7 @@ update_vm() {
         name=$(qm config "$vmid" 2>/dev/null | grep "^name:" | awk '{print $2}')
     elif pct status "$vmid" &>/dev/null 2>&1; then
         kind="lxc"
+        # shellcheck disable=SC2034  # gebruikt via _expand's eval in MSG_UPDATE_VM_*
         name=$(pct config "$vmid" 2>/dev/null | grep "^hostname:" | awk '{print $2}')
     else
         return 1

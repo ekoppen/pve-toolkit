@@ -1,0 +1,4 @@
+# SC1090: this codebase dynamically sources lib/lang/${LANG_CHOICE}.sh from
+# many scripts. LANG_CHOICE is always "en"/"nl", set by setup.sh, never
+# arbitrary user input - shellcheck just can't follow the non-constant path.
+disable=SC1090

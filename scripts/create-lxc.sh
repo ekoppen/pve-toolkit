@@ -24,7 +24,6 @@ USE_REGISTRY=false
 
 for lib_path in "$SCRIPT_DIR/../lib" "/root/lib"; do
     if [[ -f "$lib_path/defaults.sh" ]]; then
-        LIB_DIR_RESOLVED="$lib_path"
         # shellcheck source=/dev/null
         source "$lib_path/common.sh" 2>/dev/null || true
         # shellcheck source=/dev/null
@@ -307,6 +306,7 @@ if [[ "$START_AFTER" == true ]]; then
         if [[ -z "$SCRIPT_PATH" ]]; then
             log_warn "$MSG_CREATE_LXC_POSTINSTALL_NOT_FOUND"
         else
+            # shellcheck disable=SC2034  # gebruikt via _expand's eval in MSG_CREATE_LXC_POSTINSTALL_RUNNING
             SCRIPT="$POSTINSTALL"
             log_info "$MSG_CREATE_LXC_POSTINSTALL_RUNNING"
             if pct exec "$CT_ID" -- bash -s < "$SCRIPT_PATH"; then

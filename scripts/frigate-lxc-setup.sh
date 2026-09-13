@@ -84,7 +84,7 @@ echo "  ❌  Keyctl:     NEE"
 echo "  📦  RAM:        minimaal 2048 MB (aanbevolen 4096)"
 echo "  💾  Disk:       minimaal 20GB (aanbevolen 50GB)"
 echo ""
-read -p "Druk op Enter om de community-script installer te starten..."
+read -rp "Druk op Enter om de community-script installer te starten..."
 
 bash -c "$(wget -qLO - https://github.com/community-scripts/ProxmoxVE/raw/main/ct/docker.sh)"
 
@@ -92,7 +92,7 @@ bash -c "$(wget -qLO - https://github.com/community-scripts/ProxmoxVE/raw/main/c
 # Stap 3: LXC ID ophalen
 # -----------------------------------------------------------------------------
 echo ""
-read -p "Welk ID heeft de nieuwe LXC gekregen? (bijv. 107): " LXC_ID
+read -rp "Welk ID heeft de nieuwe LXC gekregen? (bijv. 107): " LXC_ID
 
 if ! pct status "$LXC_ID" &>/dev/null; then
   error "LXC $LXC_ID niet gevonden. Controleer het ID en probeer opnieuw."

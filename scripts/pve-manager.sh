@@ -67,6 +67,7 @@ do_update() {
     echo "$UPGRADABLE"
     echo ""
 
+    # shellcheck disable=SC2034  # gebruikt via _expand's eval in MSG_PVE_UPDATE_COUNT
     UPGRADE_COUNT=$(echo "$UPGRADABLE" | wc -l | tr -d ' ')
     echo -e "${BLUE}${MSG_PVE_UPDATE_COUNT}${NC}"
     echo ""

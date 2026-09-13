@@ -329,6 +329,7 @@ do_del_user() {
 do_list_users() {
     local vmid=$1
     local name
+    # shellcheck disable=SC2034  # gebruikt via _expand's eval in MSG_USER_LIST_FETCHING
     name=$(guest_name "$vmid")
 
     log_info "$MSG_USER_LIST_FETCHING"

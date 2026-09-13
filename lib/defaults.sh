@@ -10,6 +10,12 @@
 #   Klaar! Het type verschijnt automatisch in het menu.
 # ============================================
 
+# These associative arrays are the registry's public API: they are populated
+# here and read by scripts/create-vm.sh, scripts/create-lxc.sh,
+# scripts/create-incus.sh and scripts/menu.sh, so shellcheck's "appears
+# unused" (SC2034) is a false positive for this file.
+# shellcheck disable=SC2034
+
 # ── Registry storage ──────────────────────────
 # Bash 4+ associatieve arrays
 declare -A TYPE_LABELS

@@ -92,6 +92,7 @@ backup_vm() {
     if qm status "$vmid" &>/dev/null 2>&1; then
         name=$(qm config "$vmid" 2>/dev/null | grep "^name:" | awk '{print $2}')
     elif pct status "$vmid" &>/dev/null 2>&1; then
+        # shellcheck disable=SC2034  # gebruikt via _expand's eval in MSG_BACKUP_*
         name=$(pct config "$vmid" 2>/dev/null | grep "^hostname:" | awk '{print $2}')
     fi
 
