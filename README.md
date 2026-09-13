@@ -214,6 +214,21 @@ remote-host targeting yet, just the local `incus` daemon.
     install-app.sh retrohead --incus --ctid my-container
     install-app.sh retrohead --incus --check
 
+For a general-purpose Docker host (not one of the doorkoppen apps above),
+use `create-incus.sh` directly with the `docker-agent` type — Debian +
+Docker + Compose + git + a Portainer agent (add it to your Portainer server
+afterwards via `<IP>:9001`), provisioned through cloud-init instead of a
+post-install script:
+
+    create-incus.sh myhost myhost docker-agent --lan --start
+
+This type is Incus-only (cloud-init based); on Proxmox use the `docker` LXC
+type or the cloud-init `docker` VM type instead. Cloud-init types need the
+`images:debian/<version>/cloud` image variant (used automatically) and a
+matching `snippets/<type>-cloud-config.yaml` file — same cloud-config format
+as the Proxmox VM types, just applied via `cloud-init.user-data` instead of
+a cicustom snippet.
+
 Two things Incus doesn't do (yet) the way Proxmox does:
 - **No LAN IP by default** — the `incusbr0` bridge is NAT-only. Add `--lan`
   to attach the container via a macvlan network (`macvlan0`) instead, giving

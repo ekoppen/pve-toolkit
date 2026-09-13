@@ -1,0 +1,58 @@
+#cloud-config
+
+# ============================================
+# DOCKER + PORTAINER AGENT CLOUD-INIT CONFIG
+# Debian + Docker + Compose + git + Portainer agent
+# Voor Incus (create-incus.sh <naam> <naam> docker-agent), draait als root
+# zoals de rest van deze toolkit's containers - geen apart admin-user.
+# ============================================
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - curl
+  - git
+  - ca-certificates
+  - gnupg
+  - htop
+  - unattended-upgrades
+
+ssh_authorized_keys:
+  - YOUR_SSH_PUBLIC_KEY_HERE
+
+runcmd:
+  # Docker installatie via officieel script
+  - curl -fsSL https://get.docker.com | sh
+  - systemctl enable --now docker
+
+  # Portainer agent - verbindt niet zelf, wordt vanuit een centrale
+  # Portainer-server toegevoegd op <IP>:9001 ("Environments" -> "Add environment").
+  - |
+    if ! docker ps -q --filter name=^portainer_agent$ | grep -q .; then
+      docker run -d --name portainer_agent --restart=always -p 9001:9001 \
+        -v /var/run/docker.sock:/var/run/docker.sock \
+        -v /var/lib/docker/volumes:/var/lib/docker/volumes \
+        portainer/agent:lts
+    fi
+
+  # Docker prune cronjob
+  - echo "0 3 * * 0 root docker system prune -af --volumes 2>&1 | logger -t docker-prune" > /etc/cron.d/docker-prune
+
+write_files:
+  - path: /etc/docker/daemon.json
+    content: |
+      {
+        "log-driver": "json-file",
+        "log-opts": {
+          "max-size": "10m",
+          "max-file": "3"
+        },
+        "storage-driver": "overlay2"
+      }
+  - path: /etc/apt/apt.conf.d/20auto-upgrades
+    content: |
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+
+final_message: "Docker + Portainer-agent klaar na $UPTIME seconden - voeg toe in Portainer op <IP>:9001"

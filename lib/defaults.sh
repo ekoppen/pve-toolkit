@@ -168,6 +168,18 @@ register_lxc_type "docker" \
     "nesting=1,keyctl=1" \
     "" ""
 
+# Incus-only (create-incus.sh): provisioned via cloud-init
+# (snippets/docker-agent-cloud-config.yaml), not a lxc-post-install script.
+# On Proxmox this type has no postinstall, so create-lxc.sh would just give
+# a bare LXC for it — not wired up there, use "docker" instead.
+register_lxc_type "docker-agent" \
+    "Docker + Portainer Agent (Incus)" \
+    "${MSG_DEFAULTS_LXC_DOCKER_AGENT_DESC:-Debian + Docker + Compose + git + Portainer agent, via cloud-init}" \
+    2 2048 "20G" \
+    "" \
+    "" \
+    "" ""
+
 # ── Lookup functies ──────────────────────────
 
 # Retourneert snippet pad voor Proxmox

@@ -59,6 +59,16 @@ only the container layer differs:
   appears).
 - Known gaps: the `default` (dir) storage pool has no disk-quota support
   (`--disk` is accepted but not enforced).
+- Cloud-init-based `create-incus.sh` types: if `snippets/<type>-cloud-config.yaml`
+  exists, `create-incus.sh` uses the `images:debian/<version>/cloud` image
+  variant (has cloud-init preinstalled; the plain `images:debian/<version>`
+  does not) and passes the snippet as `cloud-init.user-data`, substituting
+  `YOUR_SSH_PUBLIC_KEY_HERE` for the real key(s) — or dropping the whole
+  `ssh_authorized_keys` key entirely if none are configured (an empty list
+  fails cloud-init's schema validation). First type: `docker-agent` (Debian +
+  Docker + Compose + git + Portainer agent on :9001). Falls back to the
+  existing manual-SSH-key-injection + `lxc-post-install/*.sh` path for types
+  without a matching snippet (`base`, `docker`).
 - `incusbr0` is NAT-only by default; `--lan` on `install-app.sh`/
   `create-incus.sh` attaches via a `macvlan0` network instead (real LAN IP,
   one-time setup: `incus network create macvlan0 --type=macvlan

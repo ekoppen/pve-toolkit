@@ -150,18 +150,56 @@ for snippet in "${SNIPPET_CANDIDATES[@]}"; do
 done
 [[ -z "$SSH_KEYS" ]] && log_warn "$MSG_CREATE_LXC_NO_SSH_KEYS"
 
+# ── Cloud-init type? (bv. docker-agent) ───────
+# Als er een snippets/<type>-cloud-config.yaml bestaat, gebruiken we die i.p.v.
+# de handmatige ssh-key-injectie + lxc-post-install-scripts hieronder — zelfde
+# cloud-config-bestanden als de Proxmox-VM-kant, alleen via cloud-init.user-data
+# i.p.v. een Proxmox-cicustom-snippet. Vereist de /cloud-image-variant (heeft
+# cloud-init al aan boord; de gewone images:debian/N-variant niet).
+CLOUD_INIT_FILE=""
+for c in "$SCRIPT_DIR/../snippets/${CT_TYPE}-cloud-config.yaml" "/var/lib/vz/snippets/${CT_TYPE}-cloud-config.yaml"; do
+    [[ -f "$c" ]] && { CLOUD_INIT_FILE="$c"; break; }
+done
+
+CLOUD_INIT_USERDATA=""
+if [[ -n "$CLOUD_INIT_FILE" ]]; then
+    if [[ -n "$SSH_KEYS" ]]; then
+        KEY_LINES=""
+        while IFS= read -r k; do
+            [[ -z "$k" ]] && continue
+            KEY_LINES="${KEY_LINES}  - ${k}"$'\n'
+        done <<< "$SSH_KEYS"
+        CLOUD_INIT_USERDATA=$(awk -v keys="$KEY_LINES" '
+            /YOUR_SSH_PUBLIC_KEY_HERE/ { printf "%s", keys; next }
+            { print }
+        ' "$CLOUD_INIT_FILE")
+    else
+        # Geen keys beschikbaar: laat de hele ssh_authorized_keys-key weg i.p.v.
+        # 'm leeg achter te laten (lege YAML-lijst faalt cloud-init's schema-check).
+        CLOUD_INIT_USERDATA=$(awk '
+            /^ssh_authorized_keys:[[:space:]]*$/ { skip=1; next }
+            skip && /YOUR_SSH_PUBLIC_KEY_HERE/ { skip=0; next }
+            { print }
+        ' "$CLOUD_INIT_FILE")
+    fi
+fi
+
 # ── Header ────────────────────────────────────
 echo ""
 echo -e "${BLUE}════════════════════════════════════════${NC}"
 echo -e "${BLUE}  $(_expand "$MSG_CREATE_INCUS_HEADER")${NC}"
 echo -e "${BLUE}════════════════════════════════════════${NC}"
 echo ""
+IMAGE="images:debian/${DEBIAN_VERSION}"
+[[ -n "$CLOUD_INIT_FILE" ]] && IMAGE="images:debian/${DEBIAN_VERSION}/cloud"
+
 log_info "Type:     $CT_TYPE"
 log_info "Naam:     $CT_NAME"
 log_info "Cores:    $CORES"
 log_info "Memory:   ${MEMORY}MB"
-log_info "Image:    images:debian/${DEBIAN_VERSION}"
+log_info "Image:    $IMAGE"
 [[ "$WANT_FUSE" == true ]] && log_info "Features: fuse"
+[[ -n "$CLOUD_INIT_FILE" ]] && log_info "Cloud-init: $(basename "$CLOUD_INIT_FILE")"
 echo ""
 
 # ── incus init/launch ─────────────────────────
@@ -170,11 +208,13 @@ log_info "$MSG_CREATE_INCUS_STEP_CREATE"
 
 NET_ARGS=()
 [[ "$WANT_LAN" == true ]] && NET_ARGS=(--network macvlan0)
+CI_ARGS=()
+[[ -n "$CLOUD_INIT_FILE" ]] && CI_ARGS=(--config "cloud-init.user-data=$CLOUD_INIT_USERDATA")
 
 if [[ "$START_AFTER" == true ]]; then
-    incus launch "images:debian/${DEBIAN_VERSION}" "$CT_NAME" "${NET_ARGS[@]}" || log_error "$MSG_CREATE_LXC_CREATE_FAILED"
+    incus launch "$IMAGE" "$CT_NAME" "${NET_ARGS[@]}" "${CI_ARGS[@]}" || log_error "$MSG_CREATE_LXC_CREATE_FAILED"
 else
-    incus init "images:debian/${DEBIAN_VERSION}" "$CT_NAME" "${NET_ARGS[@]}" || log_error "$MSG_CREATE_LXC_CREATE_FAILED"
+    incus init "$IMAGE" "$CT_NAME" "${NET_ARGS[@]}" "${CI_ARGS[@]}" || log_error "$MSG_CREATE_LXC_CREATE_FAILED"
 fi
 
 incus config set "$CT_NAME" limits.cpu "$CORES"
@@ -190,7 +230,7 @@ if [[ "$WANT_FUSE" == true ]]; then
     incus config device add "$CT_NAME" fuse unix-char path=/dev/fuse || log_warn "$MSG_CREATE_INCUS_FUSE_FAILED"
 fi
 
-if [[ -n "$SSH_KEYS" ]]; then
+if [[ -n "$SSH_KEYS" && -z "$CLOUD_INIT_FILE" ]]; then
     incus exec "$CT_NAME" -- mkdir -p /root/.ssh
     echo "$SSH_KEYS" | incus exec "$CT_NAME" -- tee -a /root/.ssh/authorized_keys >/dev/null
     incus exec "$CT_NAME" -- chmod 700 /root/.ssh
@@ -250,5 +290,6 @@ if [[ -n "$IP" ]]; then
     fi
     echo ""
     echo -e "  Console:  ${YELLOW}incus exec $CT_NAME -- bash${NC}"
+    [[ -n "$CLOUD_INIT_FILE" ]] && echo -e "  ${YELLOW}Cloud-init draait op de achtergrond door (Docker-install + Portainer-agent) — kan nog een paar minuten duren.${NC}"
 fi
 echo ""
