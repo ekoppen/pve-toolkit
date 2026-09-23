@@ -97,6 +97,7 @@ usage() {
     echo "$MSG_CREATE_VM_OPT_MEMORY"
     echo "$MSG_CREATE_VM_OPT_DISK"
     echo "$MSG_CREATE_VM_OPT_VLAN"
+    echo "$MSG_CREATE_VM_OPT_TEMPLATE"
     echo "$MSG_CREATE_VM_OPT_FULL"
     echo "$MSG_CREATE_VM_OPT_ONBOOT"
     echo "$MSG_CREATE_VM_OPT_START"
@@ -165,14 +166,15 @@ ONBOOT=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --cores)   CORES=$2;      shift 2 ;;
-        --memory)  MEMORY=$2;     shift 2 ;;
-        --disk)    DISK_SIZE=$2;  shift 2 ;;
-        --vlan)    VLAN_TAG=$2;   shift 2 ;;
-        --full)    CLONE_TYPE="full"; shift ;;
-        --onboot)  ONBOOT=true;   shift ;;
-        --start)   START_AFTER=true;  shift ;;
-        *)         log_error "$MSG_CREATE_VM_UNKNOWN_OPTION" ;;
+        --cores)    CORES=$2;       shift 2 ;;
+        --memory)   MEMORY=$2;      shift 2 ;;
+        --disk)     DISK_SIZE=$2;   shift 2 ;;
+        --vlan)     VLAN_TAG=$2;    shift 2 ;;
+        --template) TEMPLATE_ID=$2; shift 2 ;;
+        --full)     CLONE_TYPE="full"; shift ;;
+        --onboot)   ONBOOT=true;    shift ;;
+        --start)    START_AFTER=true;  shift ;;
+        *)          log_error "$MSG_CREATE_VM_UNKNOWN_OPTION" ;;
     esac
 done
 

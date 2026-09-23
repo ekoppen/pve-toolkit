@@ -151,6 +151,7 @@ show_confirmation() {
   $MSG_COMMON_NAME_LABEL:       $VM_NAME
   ID:         $VM_ID
   Type:       ${TYPE_LABELS[$SELECTED_TYPE]}
+  Template:   ${SELECTED_TEMPLATE_ID:-$MSG_MENU_CONFIRM_VLAN_NONE}
   Cores:      $CORES
   RAM:        ${MEMORY}MB
   Disk:       $disk_info
@@ -168,6 +169,7 @@ create_vm() {
     local cmd_args=("$VM_NAME" "$VM_ID" "$SELECTED_TYPE")
     cmd_args+=("--cores" "$CORES")
     cmd_args+=("--memory" "$MEMORY")
+    [[ -n "$SELECTED_TEMPLATE_ID" ]] && cmd_args+=("--template" "$SELECTED_TEMPLATE_ID")
     [[ -n "$DISK_SIZE" ]] && cmd_args+=("--disk" "$DISK_SIZE")
     [[ -n "$VLAN_TAG" ]] && cmd_args+=("--vlan" "$VLAN_TAG")
     [[ "$CLONE_TYPE" == "full" ]] && cmd_args+=("--full")
@@ -259,8 +261,29 @@ delete_vm_menu() {
 }
 
 # ── Template check ───────────────────────────
+# Zet SELECTED_TEMPLATE_ID op het te gebruiken template-ID (globaal, gelezen
+# door create_vm()). Templates staan op lokale storage per node, dus we
+# laten alleen kiezen uit templates die HIER lokaal bestaan.
 check_template() {
-    # Lees TEMPLATE_ID uit create-vm.sh
+    local templates
+    templates=$(list_local_templates)
+
+    if [[ -n "$templates" ]]; then
+        if [[ $(wc -l <<< "$templates") -eq 1 ]]; then
+            SELECTED_TEMPLATE_ID="${templates%% *}"
+        else
+            local menu_args=() line
+            while IFS= read -r line; do
+                menu_args+=("${line%% *}" "${line#* }")
+            done <<< "$templates"
+            SELECTED_TEMPLATE_ID=$(menu_select "$MSG_MENU_TPL_SELECT_TITLE" \
+                "$MSG_MENU_TPL_SELECT_PROMPT" 16 "${menu_args[@]}") || return 1
+        fi
+        return 0
+    fi
+
+    # Geen lokale templates - lees de standaard TEMPLATE_ID uit create-vm.sh
+    # als suggestie voor het aan te maken template.
     local create_script=""
     if [[ -f "$SCRIPT_DIR/create-vm.sh" ]]; then
         create_script="$SCRIPT_DIR/create-vm.sh"
@@ -272,62 +295,60 @@ check_template() {
 
     local tpl_id
     tpl_id=$(grep "^TEMPLATE_ID=" "$create_script" | head -1 | cut -d'=' -f2 | awk '{print $1}')
-    [[ -z "$tpl_id" ]] && return 0
+    [[ -z "$tpl_id" ]] && tpl_id=9000
 
-    # Check of template bestaat (cluster-breed: templates staan op lokale
-    # storage per node, dus qm status alleen ziet alleen wat op deze node
-    # staat)
+    # Bestaat dat ID al elders in het cluster? Dan is het hier niet bruikbaar
+    # (lokale storage) en zou aanmaken met hetzelfde ID clashen (VMIDs zijn
+    # cluster-breed uniek).
     local tpl_owner_node
     tpl_owner_node=$(vmid_node "$tpl_id") || true
-
-    if [[ -n "$tpl_owner_node" && "$tpl_owner_node" != "$(hostname)" ]]; then
+    if [[ -n "$tpl_owner_node" ]]; then
         msg_info "$MSG_MENU_TPL_WRONG_NODE_TITLE" "$(_expand "$MSG_MENU_TPL_WRONG_NODE_TEXT")"
         return 1
     fi
 
-    if [[ -z "$tpl_owner_node" ]]; then
-        if confirm "$MSG_MENU_TPL_MISSING_TITLE" \
-            "$(_expand "$MSG_MENU_TPL_MISSING_TEXT")"; then
+    if confirm "$MSG_MENU_TPL_MISSING_TITLE" \
+        "$(_expand "$MSG_MENU_TPL_MISSING_TEXT")"; then
 
-            # Zoek create-template.sh
-            local tpl_script=""
-            if [[ -f "$SCRIPT_DIR/create-template.sh" ]]; then
-                tpl_script="$SCRIPT_DIR/create-template.sh"
-            elif [[ -f "/root/scripts/create-template.sh" ]]; then
-                tpl_script="/root/scripts/create-template.sh"
-            fi
+        # Zoek create-template.sh
+        local tpl_script=""
+        if [[ -f "$SCRIPT_DIR/create-template.sh" ]]; then
+            tpl_script="$SCRIPT_DIR/create-template.sh"
+        elif [[ -f "/root/scripts/create-template.sh" ]]; then
+            tpl_script="/root/scripts/create-template.sh"
+        fi
 
-            if [[ -n "$tpl_script" ]]; then
-                # Debian versiekeuze
-                local deb_version
-                deb_version=$(menu_select "$MSG_MENU_TPL_VERSION_TITLE" \
-                    "$MSG_MENU_TPL_VERSION_PROMPT" 12 \
-                    "12" "Debian 12 (Bookworm) - Stable" \
-                    "13" "Debian 13 (Trixie)") || deb_version="12"
+        if [[ -n "$tpl_script" ]]; then
+            # Debian versiekeuze
+            local deb_version
+            deb_version=$(menu_select "$MSG_MENU_TPL_VERSION_TITLE" \
+                "$MSG_MENU_TPL_VERSION_PROMPT" 12 \
+                "12" "Debian 12 (Bookworm) - Stable" \
+                "13" "Debian 13 (Trixie)") || deb_version="12"
 
-                clear
-                show_banner
-                echo -e "${BLUE}$MSG_MENU_TPL_CREATING${NC}"
-                echo ""
-                bash "$tpl_script" --id "$tpl_id" --version "$deb_version" --auto
-                local exit_code=$?
-                echo ""
-                if [[ $exit_code -eq 0 ]]; then
-                    echo -e "${GREEN}$MSG_MENU_TPL_CREATED${NC}"
-                else
-                    echo -e "${RED}$MSG_MENU_TPL_FAILED${NC}"
-                    read -r
-                    return 1
-                fi
-                read -r
+            clear
+            show_banner
+            echo -e "${BLUE}$MSG_MENU_TPL_CREATING${NC}"
+            echo ""
+            bash "$tpl_script" --id "$tpl_id" --version "$deb_version" --auto
+            local exit_code=$?
+            echo ""
+            if [[ $exit_code -eq 0 ]]; then
+                echo -e "${GREEN}$MSG_MENU_TPL_CREATED${NC}"
+                SELECTED_TEMPLATE_ID="$tpl_id"
             else
-                msg_info "$MSG_COMMON_ERROR" "$MSG_MENU_TPL_SCRIPT_NOT_FOUND"
+                echo -e "${RED}$MSG_MENU_TPL_FAILED${NC}"
+                read -r
                 return 1
             fi
+            read -r
         else
-            # Gebruiker kiest "Nee" - terug naar menu
+            msg_info "$MSG_COMMON_ERROR" "$MSG_MENU_TPL_SCRIPT_NOT_FOUND"
             return 1
         fi
+    else
+        # Gebruiker kiest "Nee" - terug naar menu
+        return 1
     fi
     return 0
 }

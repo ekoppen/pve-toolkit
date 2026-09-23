@@ -156,6 +156,19 @@ guest_type() {
     [[ -f "/etc/pve/nodes/$node/qemu-server/$id.conf" ]] && echo "vm" || echo "lxc"
 }
 
+# Lijst QEMU-templates op DEZE node: "id naam" per regel. Templates staan op
+# lokale storage, dus alleen wat hier lokaal aangemaakt is, is hier bruikbaar.
+list_local_templates() {
+    local conf id name
+    for conf in "/etc/pve/nodes/$(hostname)/qemu-server/"*.conf; do
+        [[ -f "$conf" ]] || continue
+        grep -q "^template: 1" "$conf" || continue
+        id=$(basename "$conf" .conf)
+        name=$(grep "^name: " "$conf" | head -1 | cut -d' ' -f2-)
+        echo "$id ${name:-$id}"
+    done
+}
+
 # ── Validatie ────────────────────────────────
 
 # Controleer disk grootte formaat (bijv. 32G, 100G, 1T)
