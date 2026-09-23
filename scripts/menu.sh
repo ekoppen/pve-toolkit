@@ -274,10 +274,20 @@ check_template() {
     tpl_id=$(grep "^TEMPLATE_ID=" "$create_script" | head -1 | cut -d'=' -f2 | awk '{print $1}')
     [[ -z "$tpl_id" ]] && return 0
 
-    # Check of template bestaat
-    if ! qm status "$tpl_id" &>/dev/null 2>&1; then
+    # Check of template bestaat (cluster-breed: templates staan op lokale
+    # storage per node, dus qm status alleen ziet alleen wat op deze node
+    # staat)
+    local tpl_owner_node
+    tpl_owner_node=$(vmid_node "$tpl_id") || true
+
+    if [[ -n "$tpl_owner_node" && "$tpl_owner_node" != "$(hostname)" ]]; then
+        msg_info "$MSG_MENU_TPL_WRONG_NODE_TITLE" "$(_expand "$MSG_MENU_TPL_WRONG_NODE_TEXT")"
+        return 1
+    fi
+
+    if [[ -z "$tpl_owner_node" ]]; then
         if confirm "$MSG_MENU_TPL_MISSING_TITLE" \
-            "$MSG_MENU_TPL_MISSING_TEXT"; then
+            "$(_expand "$MSG_MENU_TPL_MISSING_TEXT")"; then
 
             # Zoek create-template.sh
             local tpl_script=""
@@ -339,7 +349,7 @@ create_haos_flow() {
         return 1
     fi
 
-    if qm status "$VM_ID" &>/dev/null 2>&1; then
+    if vmid_node "$VM_ID" &>/dev/null; then
         msg_info "$MSG_COMMON_ERROR" "$MSG_MENU_VM_ID_IN_USE"
         return 1
     fi

@@ -192,11 +192,23 @@ if [[ "$USE_REGISTRY" == true ]]; then
 fi
 
 # ── Validatie ─────────────────────────────────
-# Check of template bestaat
-qm status "$TEMPLATE_ID" &>/dev/null || log_error "$MSG_CREATE_VM_TPL_NOT_FOUND"
+# Check of template bestaat. Templates staan op lokale storage per node, dus
+# qm status ziet alleen wat op DEZE node staat - een template die op een
+# andere clusternode is gemaakt lijkt anders ten onrechte "niet gevonden".
+if ! qm status "$TEMPLATE_ID" &>/dev/null 2>&1; then
+    # shellcheck disable=SC2034  # gebruikt via _expand in MSG_CREATE_VM_TPL_WRONG_NODE
+    if command -v vmid_node &>/dev/null && TPL_OWNER_NODE=$(vmid_node "$TEMPLATE_ID"); then
+        log_error "$MSG_CREATE_VM_TPL_WRONG_NODE"
+    fi
+    log_error "$MSG_CREATE_VM_TPL_NOT_FOUND"
+fi
 
-# Check of VM ID al bestaat
-if qm status "$VM_ID" &>/dev/null 2>&1; then
+# Check of VM ID al bestaat (VMIDs zijn cluster-breed uniek)
+if command -v vmid_node &>/dev/null; then
+    if vmid_node "$VM_ID" &>/dev/null; then
+        log_error "$MSG_CREATE_VM_ID_EXISTS"
+    fi
+elif qm status "$VM_ID" &>/dev/null 2>&1; then
     log_error "$MSG_CREATE_VM_ID_EXISTS"
 fi
 

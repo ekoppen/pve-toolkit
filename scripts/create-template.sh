@@ -183,6 +183,13 @@ log_success "$MSG_CREATE_TPL_ALL_REQUIREMENTS"
 # ── Stap 2: Template check ───────────────────
 log_info "$MSG_CREATE_TPL_STEP2"
 
+# VMIDs zijn cluster-breed uniek, ook al staat het template lokaal op deze
+# node - check dus ook of het ID al door een andere clusternode is gebruikt.
+# shellcheck disable=SC2034  # gebruikt via _expand in MSG_CREATE_TPL_ID_USED_ELSEWHERE
+if command -v vmid_node &>/dev/null && ! qm status "$TEMPLATE_ID" &>/dev/null 2>&1 && TPL_OWNER_NODE=$(vmid_node "$TEMPLATE_ID"); then
+    log_error "$MSG_CREATE_TPL_ID_USED_ELSEWHERE"
+fi
+
 if qm status "$TEMPLATE_ID" &>/dev/null 2>&1; then
     if [[ "$AUTO_MODE" == true ]]; then
         log_info "$MSG_CREATE_TPL_EXISTS_AUTO"

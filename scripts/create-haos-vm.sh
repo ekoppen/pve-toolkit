@@ -181,7 +181,9 @@ log_success "$MSG_CREATE_HAOS_ALL_REQUIREMENTS"
 # ── Stap 2: VM ID check ──────────────────────
 log_info "$MSG_CREATE_HAOS_STEP2"
 
-if qm status "$VM_ID" &>/dev/null 2>&1; then
+if command -v vmid_node &>/dev/null; then
+    vmid_node "$VM_ID" &>/dev/null && log_error "$MSG_CREATE_HAOS_ID_EXISTS"
+elif qm status "$VM_ID" &>/dev/null 2>&1; then
     log_error "$MSG_CREATE_HAOS_ID_EXISTS"
 fi
 

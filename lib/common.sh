@@ -123,26 +123,37 @@ radio_select() {
 
 # ── Hulpfuncties ──────────────────────────────
 
-# Volgende beschikbare VM/LXC ID (beide namespaces delen dezelfde IDs)
+# Op welke cluster-node staat een VM/LXC-ID (leeg + exit 1 als nergens).
+# Leest /etc/pve rechtstreeks (de gedeelde pmxcfs) in plaats van qm/pct
+# status, want die commando's zien alleen VMs van de lokale node - een
+# template/VM die op een andere clusterlid staat lijkt anders "niet
+# gevonden" terwijl hij wel degelijk bestaat.
+vmid_node() {
+    local id="$1" conf
+    for conf in /etc/pve/nodes/*/qemu-server/"$id".conf /etc/pve/nodes/*/lxc/"$id".conf; do
+        [[ -f "$conf" ]] || continue
+        conf="${conf#/etc/pve/nodes/}"
+        echo "${conf%%/*}"
+        return 0
+    done
+    return 1
+}
+
+# Volgende beschikbare VM/LXC ID, cluster-breed (beide namespaces delen dezelfde IDs)
 next_vmid() {
     local start=${1:-100}
     local vmid=$start
-    while qm status "$vmid" &>/dev/null 2>&1 || pct status "$vmid" &>/dev/null 2>&1; do
+    while vmid_node "$vmid" &>/dev/null; do
         vmid=$((vmid + 1))
     done
     echo "$vmid"
 }
 
-# Detecteer type (vm|lxc|"") voor een gegeven ID
+# Detecteer type (vm|lxc|"") voor een gegeven ID, cluster-breed
 guest_type() {
-    local id="$1"
-    if qm status "$id" &>/dev/null 2>&1; then
-        echo "vm"
-    elif pct status "$id" &>/dev/null 2>&1; then
-        echo "lxc"
-    else
-        echo ""
-    fi
+    local id="$1" node
+    node=$(vmid_node "$id") || { echo ""; return; }
+    [[ -f "/etc/pve/nodes/$node/qemu-server/$id.conf" ]] && echo "vm" || echo "lxc"
 }
 
 # ── Validatie ────────────────────────────────
